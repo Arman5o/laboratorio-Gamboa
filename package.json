@@ -1,0 +1,17 @@
+{
+  "name": "pwa-laboratorio-gamboa",
+  "version": "1.0.0",
+  "description": "Monorepo root - ejecuta backend y frontend juntos",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix backend-api && npm install --prefix frontend-pwa",
+    "build:frontend": "npm run build --prefix frontend-pwa",
+    "start:backend": "npm run start:dev --prefix backend-api",
+    "start:frontend": "npm run start --prefix frontend-pwa",
+    "start": "npm run build:frontend && concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan,magenta\" \"npm run start:backend\" \"npm run start:frontend\"",
+    "dev": "concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan,magenta\" \"npm run start:backend\" \"npm run dev --prefix frontend-pwa\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
