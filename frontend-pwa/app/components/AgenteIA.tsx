@@ -579,8 +579,14 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   return (
     <>
       {abierto && (
-        <div
-          className="fixed bottom-24 right-5 z-50 w-[380px] max-h-[620px] flex flex-col rounded-2xl shadow-2xl overflow-hidden border border-slate-700/80"
+      <div
+          className="
+            fixed z-50 flex flex-col overflow-hidden border border-slate-700/80
+            /* MÓVIL: pantalla completa */
+            inset-0 rounded-none
+            /* ESCRITORIO: panel flotante */
+            sm:inset-auto sm:bottom-24 sm:right-5 sm:w-[380px] sm:max-h-[620px] sm:rounded-2xl
+          "
           style={{
             background: "linear-gradient(180deg, #0d1117 0%, #0f172a 100%)",
             animation: "slideUp 0.25s ease-out",
@@ -669,16 +675,19 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
               {/* Chips rápidos */}
               {flujo === "idle" && (
-                <div className="px-3 pb-2 flex gap-2 overflow-x-auto shrink-0 border-t border-slate-800/50 pt-2">
-                  {["📅 Programar cita", "⏰ Horarios", "🧪 Preparación", "📋 Mis citas"].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => { setInput(s); }}
-                      className="shrink-0 text-[11px] bg-slate-800/80 border border-slate-700/80 text-cyan-400 px-3 py-1.5 rounded-full hover:bg-cyan-900/30 hover:border-cyan-600 transition-all whitespace-nowrap"
-                    >
-                      {s}
-                    </button>
-                  ))}
+                <div className="px-3 pb-2 shrink-0 border-t border-slate-800/50 pt-2">
+                  {/* Grid en móvil, scroll en escritorio */}
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:overflow-x-auto sm:gap-2">
+                    {["📅 Programar cita", "⏰ Horarios", "🧪 Preparación", "📋 Mis citas"].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => { setInput(s); }}
+                        className="text-[11px] bg-slate-800/80 border border-slate-700/80 text-cyan-400 px-3 py-2 rounded-full hover:bg-cyan-900/30 hover:border-cyan-600 transition-all whitespace-nowrap text-center sm:shrink-0"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 

@@ -16,7 +16,7 @@ type Notificacion = {
 
 export default function NotificacionesPaciente() {
   const router = useRouter();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [userEmail, setUserEmail] = useState("Cargando...");
   const [userName, setUserName] = useState("Cargando...");
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
@@ -24,6 +24,8 @@ export default function NotificacionesPaciente() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
+    if (window.innerWidth >= 768) setIsSidebarOpen(true);
+
     // Configuración inicial de datos del usuario desde localStorage
     const email = localStorage.getItem("pacienteEmail");
     const nombreGuardado = localStorage.getItem("pacienteName");
@@ -142,8 +144,18 @@ export default function NotificacionesPaciente() {
   return (
     <div className="flex h-screen bg-slate-900 text-slate-200 font-sans overflow-hidden">
 
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
+      )}
+
       {/* SIDEBAR */}
-      <aside className={`${isSidebarOpen ? "w-64 opacity-100" : "w-0 opacity-0 pointer-events-none"} transition-all bg-slate-800 border-r border-slate-700 flex flex-col z-30 shrink-0 h-full whitespace-nowrap`}>
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-slate-800 border-r border-slate-700 flex flex-col h-full whitespace-nowrap
+        transition-transform duration-300
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 md:shrink-0
+        ${!isSidebarOpen ? 'md:w-0 md:opacity-0 md:pointer-events-none md:overflow-hidden' : 'md:w-64'}
+      `}>
         <div className="p-4 px-6 flex items-center gap-4 border-b border-slate-700/50 h-[73px]">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400">≡</button>
           <div>
@@ -180,9 +192,7 @@ export default function NotificacionesPaciente() {
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
-              {!isSidebarOpen && (
-                <button onClick={() => setIsSidebarOpen(true)} className="text-2xl text-cyan-400">≡</button>
-              )}
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400">≡</button>
               <div>
                 <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
                   🔔 Notificaciones

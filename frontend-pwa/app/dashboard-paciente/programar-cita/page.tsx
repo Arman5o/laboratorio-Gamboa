@@ -16,7 +16,7 @@ const CATALOGO_EXAMENES = [
 
 export default function ProgramarCita() {
   const router = useRouter();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const [userEmail, setUserEmail] = useState("Cargando...");
   const [userName, setUserName] = useState("Cargando...");
@@ -43,6 +43,8 @@ export default function ProgramarCita() {
   const [fechaMinima, setFechaMinima] = useState("");
 
   useEffect(() => {
+    if (window.innerWidth >= 768) setIsSidebarOpen(true);
+
     const hoy = new Date();
     const yyyy = hoy.getFullYear();
     const mm = String(hoy.getMonth() + 1).padStart(2, '0');
@@ -235,7 +237,17 @@ export default function ProgramarCita() {
   return (
     <div className="flex h-screen bg-slate-900 text-slate-200 font-sans overflow-hidden">
 
-      <aside className={`${isSidebarOpen ? 'w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'} transition-all bg-slate-800 border-r border-slate-700 flex flex-col z-30 shrink-0 h-full whitespace-nowrap`}>
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
+      )}
+
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-slate-800 border-r border-slate-700 flex flex-col h-full whitespace-nowrap
+        transition-transform duration-300
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 md:shrink-0
+        ${!isSidebarOpen ? 'md:w-0 md:opacity-0 md:pointer-events-none md:overflow-hidden' : 'md:w-64'}
+      `}>
         <div className="p-4 px-6 flex items-center gap-4 border-b border-slate-700/50 h-[73px]">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400">≡</button>
           <div>

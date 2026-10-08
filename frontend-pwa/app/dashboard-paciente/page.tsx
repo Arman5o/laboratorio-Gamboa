@@ -17,7 +17,7 @@ type Cita = {
 
 export default function DashboardPaciente() {
   const router = useRouter();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const [userEmail, setUserEmail] = useState("Cargando...");
   const [userName, setUserName] = useState("Cargando...");
@@ -25,6 +25,11 @@ export default function DashboardPaciente() {
   const [cargandoCitas, setCargandoCitas] = useState(true);
 
   useEffect(() => {
+    // Sidebar abierto solo en pantallas grandes
+    if (window.innerWidth >= 768) {
+      setIsSidebarOpen(true);
+    }
+
     const correoGuardado = localStorage.getItem("pacienteEmail");
     const nombreGuardado = localStorage.getItem("pacienteName");
 
@@ -62,8 +67,22 @@ export default function DashboardPaciente() {
   return (
     <div className="flex h-screen bg-slate-900 text-slate-200 font-sans overflow-hidden">
 
+      {/* OVERLAY para cerrar sidebar en móvil */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR */}
-      <aside className={`${isSidebarOpen ? "w-64 opacity-100" : "w-0 opacity-0 pointer-events-none"} transition-all bg-slate-800 border-r border-slate-700 flex flex-col z-30 shrink-0 h-full whitespace-nowrap`}>
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-slate-800 border-r border-slate-700 flex flex-col h-full whitespace-nowrap
+        transition-transform duration-300
+        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        md:relative md:translate-x-0 md:shrink-0
+        ${!isSidebarOpen ? "md:w-0 md:opacity-0 md:pointer-events-none md:overflow-hidden" : "md:w-64"}
+      `}>
         <div className="p-4 px-6 flex items-center gap-4 border-b border-slate-700/50 h-[73px]">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400">≡</button>
           <div>
@@ -98,13 +117,11 @@ export default function DashboardPaciente() {
       </aside>
 
       {/* CONTENIDO PRINCIPAL */}
-      <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-slate-900 p-6 md:p-10">
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-slate-900 p-4 md:p-10">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          {!isSidebarOpen && (
-            <button onClick={() => setIsSidebarOpen(true)} className="text-2xl text-cyan-400 mr-4">≡</button>
-          )}
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400 mr-4">≡</button>
           <div>
             <h1 className="text-2xl font-bold text-slate-100">
               Bienvenido, <span className="text-cyan-400">{userName.split(" ")[0]}</span> 👋

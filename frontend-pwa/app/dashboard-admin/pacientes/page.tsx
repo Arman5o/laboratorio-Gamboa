@@ -178,9 +178,11 @@ export default function GestionarPacientes() {
       )}
 
       <aside className={`
-        fixed md:relative top-0 left-0 z-50 h-full bg-slate-800 flex flex-col shrink-0 overflow-hidden
-        transition-all duration-300 ease-in-out whitespace-nowrap
-        ${isSidebarOpen ? 'w-[75%] sm:w-[60%] md:w-64 translate-x-0 border-r border-slate-700 opacity-100' : 'w-0 -translate-x-full border-0 opacity-0 pointer-events-none'} 
+        fixed inset-y-0 left-0 z-50 w-64 bg-slate-800 border-r border-slate-700 flex flex-col h-full whitespace-nowrap
+        transition-transform duration-300
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 md:shrink-0
+        ${!isSidebarOpen ? 'md:w-0 md:opacity-0 md:pointer-events-none md:overflow-hidden' : 'md:w-64'}
       `}>
         <div className="p-4 px-6 flex items-center gap-4 border-b border-slate-700/50 h-[73px]">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400 focus:outline-none">≡</button>
@@ -214,17 +216,15 @@ export default function GestionarPacientes() {
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900 w-full relative">
         
-        {!isSidebarOpen && (
-          <nav className="bg-slate-800 border-b border-slate-700 p-4 px-6 flex items-center justify-between z-20 shrink-0 shadow-md h-[73px]">
-            <div className="flex items-center gap-4">
-              <button onClick={() => setIsSidebarOpen(true)} className="text-2xl text-cyan-400 hover:text-cyan-300 focus:outline-none transition-colors">≡</button>
-              <span className="text-base font-bold text-slate-100 uppercase tracking-widest">LAB. GAMBOA</span>
-            </div>
-            <div className="hidden sm:block px-4 py-1.5 bg-slate-900 border border-slate-700 rounded-full text-xs text-slate-400">
-              Admin: <span className="text-cyan-400">{adminName}</span>
-            </div>
-          </nav>
-        )}
+        <nav className="bg-slate-800 border-b border-slate-700 p-4 px-6 flex items-center justify-between z-20 shrink-0 shadow-md h-[73px]">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400 hover:text-cyan-300 focus:outline-none transition-colors">≡</button>
+            <span className="text-base font-bold text-slate-100 uppercase tracking-widest">LAB. GAMBOA</span>
+          </div>
+          <div className="hidden sm:block px-4 py-1.5 bg-slate-900 border border-slate-700 rounded-full text-xs text-slate-400">
+            Admin: <span className="text-cyan-400">{adminName}</span>
+          </div>
+        </nav>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
