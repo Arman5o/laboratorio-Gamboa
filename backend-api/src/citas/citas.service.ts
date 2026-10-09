@@ -76,8 +76,8 @@ export class CitasService {
 
     // 0. VALIDAR QUE LA CITA NO SEA EN EL PASADO
     const ahora = new Date();
-    // Ajustar a zona horaria local de forma simple comparando los strings
-    const hoyStr = ahora.toISOString().split('T')[0];
+    // Ajustar a zona horaria local de forma simple
+    const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
     
     if (datos.fecha < hoyStr) {
       throw new HttpException({

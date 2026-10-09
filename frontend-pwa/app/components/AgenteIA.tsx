@@ -222,6 +222,9 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   const dragInfo = useRef({ startX: 0, startY: 0, initX: 0, initY: 0, isDragging: false, moved: false });
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    // Deshabilitar arrastre en computadoras (>= 640px)
+    if (window.innerWidth >= 640) return;
+
     dragInfo.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -247,18 +250,19 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
   const handlePointerUp = (e: React.PointerEvent) => {
     dragInfo.current.isDragging = false;
-    dragRef.current?.releasePointerCapture(e.pointerId);
-  };
-
-  const handleDragClick = (e: React.MouseEvent) => {
-    if (dragInfo.current.moved) {
-      e.stopPropagation();
-      e.preventDefault();
-      dragInfo.current.moved = false;
-      return;
+    if (dragRef.current?.hasPointerCapture(e.pointerId)) {
+      dragRef.current.releasePointerCapture(e.pointerId);
     }
-    setAbierto(!abierto);
-    if (!abierto) setNotifNueva(false);
+
+    // Si soltamos el botón y no se movió más del threshold, es un click
+    if (!dragInfo.current.moved) {
+      setAbierto((prev) => {
+        if (prev) setNotifNueva(false);
+        return !prev;
+      });
+    }
+    // Reseteamos el flag de moved por precaución
+    dragInfo.current.moved = false;
   };
 
   // Sesión única de chat (para memoria multi-turno)
@@ -884,7 +888,6 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         }}
       >
         <button
-          onClick={handleDragClick}
           className="w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl transition-transform hover:scale-110 active:scale-95 relative"
           style={{
             background: "linear-gradient(135deg, #0e7490, #4f46e5)",
