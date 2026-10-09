@@ -216,6 +216,49 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(1);
 
+  // ─── DRAG & DROP ESTADOS ───
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<HTMLDivElement>(null);
+  const dragInfo = useRef({ startX: 0, startY: 0, initX: 0, initY: 0, isDragging: false, moved: false });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    dragInfo.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initX: dragPos.x,
+      initY: dragPos.y,
+      isDragging: true,
+      moved: false,
+    };
+    dragRef.current?.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragInfo.current.isDragging || !dragRef.current?.hasPointerCapture(e.pointerId)) return;
+    const dx = e.clientX - dragInfo.current.startX;
+    const dy = e.clientY - dragInfo.current.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      dragInfo.current.moved = true;
+      setDragPos({ x: dragInfo.current.initX + dx, y: dragInfo.current.initY + dy });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    dragInfo.current.isDragging = false;
+    dragRef.current?.releasePointerCapture(e.pointerId);
+  };
+
+  const handleDragClick = (e: React.MouseEvent) => {
+    if (dragInfo.current.moved) {
+      e.stopPropagation();
+      e.preventDefault();
+      dragInfo.current.moved = false;
+      return;
+    }
+    setAbierto(!abierto);
+    if (!abierto) setNotifNueva(false);
+  };
+
   // Sesión única de chat (para memoria multi-turno)
   const sessionId = useRef<string>(
     `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -322,31 +365,47 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     setHistorial((h) => [...h, { de, texto }].slice(-12));
   };
 
-  // ─── HORARIOS DISPONIBLES ──────────────────────────────
   const calcularHorariosLibres = async (fecha: string): Promise<string[]> => {
     try {
       const res = await fetchAuth(`${API_URL}/citas`);
       const todas = await res.json();
+      
       const ocupadas: number[] = todas
-        .filter((c: any) => c.fecha === fecha && c.estado !== "cancelada")
+        .filter((c: any) => c.fecha === fecha && c.estado?.toLowerCase() !== "cancelada")
         .map((c: any) => {
           const [h, m] = c.hora.split(":").map(Number);
           return h * 60 + m;
         });
 
       const libres: string[] = [];
-      for (let min = 8 * 60; min < 18 * 60; min += 30) {
-        const conflicto = ocupadas.some((o) => Math.abs(o - min) < 30);
-        if (!conflicto) {
-          const h = Math.floor(min / 60).toString().padStart(2, "0");
-          const m = (min % 60).toString().padStart(2, "0");
-          libres.push(`${h}:${m}`);
-          if (libres.length >= 8) break;
+      const ahora = new Date();
+      // Formato local YYYY-MM-DD
+      const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+      const esHoy = fecha === hoyStr;
+      const minActual = ahora.getHours() * 60 + ahora.getMinutes() + 15; // 15 mins margen
+
+      // Horario bioquímico: 07:30 a 12:00 y 14:00 a 18:30
+      // En intervalos de 30 min (termina media hora antes para que la cita dure 30 min)
+      const rangos = [
+        { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }, // 07:30 - 11:30
+        { inicio: 14 * 60, fin: 18 * 60 } // 14:00 - 18:00
+      ];
+
+      for (const rango of rangos) {
+        for (let min = rango.inicio; min <= rango.fin; min += 30) {
+          if (esHoy && min < minActual) continue;
+          
+          const conflicto = ocupadas.some((o) => Math.abs(o - min) < 30);
+          if (!conflicto) {
+            const h = Math.floor(min / 60).toString().padStart(2, "0");
+            const m = (min % 60).toString().padStart(2, "0");
+            libres.push(`${h}:${m}`);
+          }
         }
       }
       return libres;
     } catch {
-      return ["08:00", "09:00", "10:00", "11:00", "14:00", "15:00", "16:00"];
+      return ["07:30", "08:00", "09:00", "14:00"];
     }
   };
 
@@ -807,23 +866,37 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       )}
 
       {/* ── BOTÓN FLOTANTE ── */}
-      <button
-        onClick={() => { setAbierto(!abierto); if (!abierto) setNotifNueva(false); }}
-        className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl transition-transform hover:scale-110 active:scale-95 relative"
+      <div
+        ref={dragRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        className="fixed z-[9999] touch-none cursor-grab active:cursor-grabbing"
         style={{
-          background: "linear-gradient(135deg, #0e7490, #4f46e5)",
-          boxShadow: "0 8px 30px rgba(6,182,212,0.35)",
-          animation: pulsando ? "ping-once 0.6s ease-out" : "float 4s ease-in-out infinite",
+          bottom: "24px",
+          right: "24px",
+          transform: `translate(${dragPos.x}px, ${dragPos.y}px)`,
         }}
-        title="AIDA — Agente IA"
       >
-        🤖
-        {notifsNoLeidas > 0 && !abierto && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-slate-900">
-            {notifsNoLeidas > 9 ? "9+" : notifsNoLeidas}
-          </span>
-        )}
-      </button>
+        <button
+          onClick={handleDragClick}
+          className="w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl transition-transform hover:scale-110 active:scale-95 relative"
+          style={{
+            background: "linear-gradient(135deg, #0e7490, #4f46e5)",
+            boxShadow: "0 8px 30px rgba(6,182,212,0.35)",
+            animation: pulsando ? "ping-once 0.6s ease-out" : "float 4s ease-in-out infinite",
+          }}
+          title="AIDA — Agente IA"
+        >
+          🤖
+          {notifsNoLeidas > 0 && !abierto && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-slate-900">
+              {notifsNoLeidas > 9 ? "9+" : notifsNoLeidas}
+            </span>
+          )}
+        </button>
+      </div>
 
       <style>{`
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }

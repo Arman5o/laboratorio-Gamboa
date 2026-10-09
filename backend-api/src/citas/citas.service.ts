@@ -26,28 +26,44 @@ export class CitasService {
 
     return citasDelDia.find(c => {
       if (idExcluir && c._id.toString() === idExcluir) return false;
-      // Para choques de horario de 30 min ignoramos las canceladas
-      if (c.estado === 'cancelada') return false; 
+      // Para choques de horario de 30 min ignoramos las canceladas (case insensitive)
+      if (c.estado && c.estado.toLowerCase() === 'cancelada') return false; 
       const horaExistenteMin = this.aMinutos(c.hora);
       return Math.abs(nuevaHoraMin - horaExistenteMin) < 30;
     });
   }
 
   private async sugerirHorarioAlternativo(fecha: string, horaDeseada: string): Promise<string> {
-    let minutos = this.aMinutos(horaDeseada);
-    for (let i = 1; i <= 20; i++) {
-      minutos += 30; // Salta de 30 en 30 minutos
-      const h = Math.floor(minutos / 60);
-      const m = minutos % 60;
-      if (h >= 18) break; // Limite a las 18:00
-      const horaSugerida = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-      
-      const conflicto = await this.buscarConflicto(fecha, horaSugerida);
-      if (!conflicto) {
-        return horaSugerida;
+    const ahora = new Date();
+    // Ajustar a local YYYY-MM-DD para comparar sin problemas
+    const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+    const esHoy = fecha === hoyStr;
+    const minActual = esHoy ? ahora.getHours() * 60 + ahora.getMinutes() + 15 : 0;
+    
+    const deseadoMin = this.aMinutos(horaDeseada);
+    
+    const rangos = [
+      { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
+      { inicio: 14 * 60, fin: 18 * 60 }
+    ];
+    
+    const libres = [];
+    for (const rango of rangos) {
+      for (let min = rango.inicio; min <= rango.fin; min += 30) {
+        if (min < minActual) continue;
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        const horaStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        
+        const conflicto = await this.buscarConflicto(fecha, horaStr);
+        if (!conflicto) libres.push({ min, horaStr });
       }
     }
-    return "08:00"; // Hora por defecto si todo está lleno
+    
+    if (libres.length === 0) return "No hay horarios disponibles hoy";
+    
+    libres.sort((a, b) => Math.abs(a.min - deseadoMin) - Math.abs(b.min - deseadoMin));
+    return libres[0].horaStr;
   }
 
   async crearCita(datos: any): Promise<Cita> {
@@ -66,14 +82,13 @@ export class CitasService {
     }
     
     if (datos.fecha === hoyStr) {
-      const horaActualStr = ahora.toTimeString().substring(0, 5);
-      if (datos.hora < horaActualStr) {
-        // Calcular sugerencia: 10 minutos después de la hora actual
-        const ahoraMas10 = new Date(ahora.getTime() + 10 * 60000);
-        const sugerencia = ahoraMas10.toTimeString().substring(0, 5);
-        
+      const ahoraMas15 = new Date(ahora.getTime() + 15 * 60000);
+      const horaMinimaStr = ahoraMas15.toTimeString().substring(0, 5);
+      
+      if (datos.hora < horaMinimaStr) {
+        const sugerencia = await this.sugerirHorarioAlternativo(datos.fecha, horaMinimaStr);
         throw new HttpException({
-          message: 'No puedes programar una cita en una hora pasada para el día de hoy.',
+          message: 'Debes programar tu cita con al menos 15 minutos de anticipación al horario actual.',
           tipoError: 'HORA_PASADA',
           sugerencia: sugerencia
         }, HttpStatus.BAD_REQUEST);
@@ -81,11 +96,10 @@ export class CitasService {
     }
 
     // 1. VALIDAR SI EL PACIENTE YA TIENE UNA CITA ACTIVA EN ESTA MISMA FECHA
-    // CORRECCIÓN: Ahora ignoramos si la cita anterior fue "cancelada" o ya fue "completada"
     const citaExistenteMismoDia = await this.citaModel.findOne({
       pacienteCorreo: correoLimpio,
       fecha: datos.fecha,
-      estado: { $nin: ['cancelada', 'completada'] } // <--- EL TRUCO ESTÁ AQUÍ
+      estado: { $nin: ['cancelada', 'Cancelada', 'completada', 'Completada'] } // Regex u opciones manuales
     }).exec();
 
     if (citaExistenteMismoDia) {
