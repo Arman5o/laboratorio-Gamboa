@@ -365,7 +365,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     setHistorial((h) => [...h, { de, texto }].slice(-12));
   };
 
-  const calcularHorariosLibres = async (fecha: string): Promise<string[]> => {
+  const calcularHorariosLibres = async (fecha: string, examen?: string): Promise<string[]> => {
     try {
       const res = await fetchAuth(`${API_URL}/citas`);
       const todas = await res.json();
@@ -379,17 +379,19 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
       const libres: string[] = [];
       const ahora = new Date();
-      // Formato local YYYY-MM-DD
       const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
       const esHoy = fecha === hoyStr;
-      const minActual = ahora.getHours() * 60 + ahora.getMinutes() + 15; // 15 mins margen
+      const minActual = ahora.getHours() * 60 + ahora.getMinutes() + 15;
 
-      // Horario bioquímico: 07:30 a 12:00 y 14:00 a 18:30
-      // En intervalos de 30 min (termina media hora antes para que la cita dure 30 min)
-      const rangos = [
-        { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }, // 07:30 - 11:30
-        { inicio: 14 * 60, fin: 18 * 60 } // 14:00 - 18:00
-      ];
+      const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
+      const requiereAyuno = examen ? examenesAyuno.includes(examen) : false;
+
+      const rangos = requiereAyuno 
+        ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }] // Solo mañana por ayuno
+        : [
+            { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
+            { inicio: 14 * 60, fin: 18 * 60 }
+          ];
 
       for (const rango of rangos) {
         for (let min = rango.inicio; min <= rango.fin; min += 30) {
@@ -574,11 +576,11 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         } else if (data.accion === "PEDIR_HORA") {
           setFlujo("esperando_hora");
           if (data.citaSlots?.fecha) {
-             const libres = await calcularHorariosLibres(data.citaSlots.fecha);
+             const libres = await calcularHorariosLibres(data.citaSlots.fecha, data.citaSlots.examen);
              setHorariosDisp(libres);
              push(agente(data.respuesta, "opciones", {
                pensamiento: data.pensamiento || "",
-               opciones: libres.length > 0 ? libres : ["No hay horarios libres"]
+               opciones: libres.length > 0 ? libres : ["No hay horarios libres para este examen"]
              }));
           } else {
              push(agente(data.respuesta, "normal", { pensamiento: data.pensamiento || "" }));

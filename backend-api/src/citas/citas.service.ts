@@ -33,7 +33,7 @@ export class CitasService {
     });
   }
 
-  private async sugerirHorarioAlternativo(fecha: string, horaDeseada: string): Promise<string> {
+  private async sugerirHorarioAlternativo(fecha: string, horaDeseada: string, examen?: string): Promise<string> {
     const ahora = new Date();
     // Ajustar a local YYYY-MM-DD para comparar sin problemas
     const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
@@ -42,10 +42,15 @@ export class CitasService {
     
     const deseadoMin = this.aMinutos(horaDeseada);
     
-    const rangos = [
-      { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
-      { inicio: 14 * 60, fin: 18 * 60 }
-    ];
+    const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
+    const requiereAyuno = examen ? examenesAyuno.includes(examen) : false;
+
+    const rangos = requiereAyuno
+      ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }]
+      : [
+          { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
+          { inicio: 14 * 60, fin: 18 * 60 }
+        ];
     
     const libres: Array<{ min: number; horaStr: string }> = [];
     for (const rango of rangos) {
@@ -86,7 +91,7 @@ export class CitasService {
       const horaMinimaStr = ahoraMas15.toTimeString().substring(0, 5);
       
       if (datos.hora < horaMinimaStr) {
-        const sugerencia = await this.sugerirHorarioAlternativo(datos.fecha, horaMinimaStr);
+        const sugerencia = await this.sugerirHorarioAlternativo(datos.fecha, horaMinimaStr, datos.examen);
         throw new HttpException({
           message: 'Debes programar tu cita con al menos 15 minutos de anticipación al horario actual.',
           tipoError: 'HORA_PASADA',
@@ -113,7 +118,7 @@ export class CitasService {
     // 2. VALIDAR COLISIÓN DE HORARIO (REGLA DE 30 MINUTOS CON OTROS PACIENTES)
     const conflicto = await this.buscarConflicto(datos.fecha, datos.hora);
     if (conflicto) {
-      const sugerencia = await this.sugerirHorarioAlternativo(datos.fecha, datos.hora);
+      const sugerencia = await this.sugerirHorarioAlternativo(datos.fecha, datos.hora, datos.examen);
       throw new HttpException({
         message: 'Horario ocupado',
         tipoError: 'HORARIO_OCUPADO',
@@ -142,10 +147,13 @@ export class CitasService {
   }
 
   async actualizarCita(id: string, datos: any): Promise<Cita | null> {
+    const citaExistente = await this.citaModel.findById(id).exec();
+    const examenFinal = datos.examen || (citaExistente ? citaExistente.examen : undefined);
+
     if (datos.fecha || datos.hora) {
       const conflicto = await this.buscarConflicto(datos.fecha, datos.hora, id);
       if (conflicto) {
-        const sugerencia = await this.sugerirHorarioAlternativo(datos.fecha, datos.hora);
+        const sugerencia = await this.sugerirHorarioAlternativo(datos.fecha, datos.hora, examenFinal);
         throw new HttpException({
           message: 'Conflicto de horario',
           tipoError: 'HORARIO_OCUPADO',

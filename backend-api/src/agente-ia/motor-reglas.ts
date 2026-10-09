@@ -130,12 +130,14 @@ function extraerFecha(texto: string, ahora: Date): string | null {
   const hoy = new Date(ahora);
   hoy.setHours(0, 0, 0, 0);
 
-  const formatFecha = (d: Date) => d.toISOString().split('T')[0];
+  const formatFecha = (d: Date) => {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
 
   // Palabras de días relativos
   if (/\bhoy\b/.test(t)) return formatFecha(hoy);
 
-  if (/\bmanana\b/.test(t) || /\bmañana\b/.test(norm(texto.toLowerCase()))) {
+  if (/\bmanana\b/.test(t) || /\bmañana\b/.test(texto.toLowerCase())) {
     const d = new Date(hoy); d.setDate(d.getDate() + 1); return formatFecha(d);
   }
 
@@ -271,11 +273,11 @@ function extraerHora(texto: string): string | null {
     if (h >= 1 && h <= 23) return fmt(h, 0);
   }
 
-  // Número solo al inicio si es hora válida (8-18): "10", "14"
+  // Número solo al inicio si es hora válida (7-18): "7", "10", "14"
   const matchSolo = t.match(/^\s*(\d{1,2})\s*$/);
   if (matchSolo) {
     const h = parseInt(matchSolo[1]);
-    if (h >= 8 && h <= 18) return fmt(h, 0);
+    if (h >= 7 && h <= 18) return fmt(h, 0);
   }
 
   return null;
@@ -361,7 +363,7 @@ function manejarFlujoCita(
   const fechaExtractada = extraerFecha(mensaje, ahora);
   const horaExtractada = extraerHora(mensaje);
 
-  const hoyStr = ahora.toISOString().split('T')[0];
+  const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
   const pad = (n: number) => n.toString().padStart(2, '0');
   const horaActualStr = `${pad(ahora.getHours())}:${pad(ahora.getMinutes())}`;
 
