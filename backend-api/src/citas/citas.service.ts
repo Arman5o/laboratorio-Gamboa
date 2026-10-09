@@ -47,7 +47,7 @@ export class CitasService {
       { inicio: 14 * 60, fin: 18 * 60 }
     ];
     
-    const libres = [];
+    const libres: Array<{ min: number; horaStr: string }> = [];
     for (const rango of rangos) {
       for (let min = rango.inicio; min <= rango.fin; min += 30) {
         if (min < minActual) continue;
