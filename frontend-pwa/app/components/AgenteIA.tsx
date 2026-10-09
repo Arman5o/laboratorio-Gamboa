@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { fetchAuth } from "../utils/fetchAuth";
@@ -210,6 +211,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   const [pulsando, setPulsando] = useState(false);
   const [notifNueva, setNotifNueva] = useState(false);
   const [inputFecha, setInputFecha] = useState("");
+  const [mounted, setMounted] = useState(false); // Para SSR safety con createPortal
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(1);
@@ -223,6 +225,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
   // ─── INIT ──────────────────────────────────────────────
   useEffect(() => {
+    setMounted(true); // El portal solo se monta en el cliente
     setMensajes([]);
   }, [rol]);
 
@@ -576,7 +579,11 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   };
 
   // ─── RENDER ────────────────────────────────────────────
-  return (
+  // No renderizar hasta que el componente esté montado en el cliente
+  // (createPortal no funciona en SSR)
+  if (!mounted) return null;
+
+  return createPortal(
     <>
       {abierto && (
       <div
@@ -825,7 +832,8 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         @keyframes ping-once { 0%{transform:scale(1);box-shadow:0 0 0 0 rgba(6,182,212,.7)} 70%{transform:scale(1.1);box-shadow:0 0 0 15px rgba(6,182,212,0)} 100%{transform:scale(1)} }
         @keyframes pulse-brain { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.1);opacity:0.8} }
       `}</style>
-    </>
+    </>,
+    document.body
   );
 }
 
