@@ -14,8 +14,13 @@ conn.on('ready', () => {
     git stash
     git pull
     
-    echo "📦 Instalando dependencias y compilando (esto tarda 1 minuto)..."
+    echo "📦 Instalando dependencias y compilando Frontend..."
     cd frontend-pwa
+    npm install
+    npm run build
+    
+    echo "⚙️ Instalando dependencias y compilando Backend..."
+    cd ../backend-api
     npm install
     npm run build
     

@@ -237,7 +237,9 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     if (!dragInfo.current.isDragging || !dragRef.current?.hasPointerCapture(e.pointerId)) return;
     const dx = e.clientX - dragInfo.current.startX;
     const dy = e.clientY - dragInfo.current.startY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+    
+    // Tolerancia de 15px para evitar clicks accidentales como drag (especial para trackpads de laptop)
+    if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
       dragInfo.current.moved = true;
       setDragPos({ x: dragInfo.current.initX + dx, y: dragInfo.current.initY + dy });
     }
