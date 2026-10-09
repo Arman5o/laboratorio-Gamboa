@@ -1,3 +1,5 @@
+process.env.TZ = 'America/La_Paz';
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 // Importamos el body-parser para manipular los límites

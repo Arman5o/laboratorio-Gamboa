@@ -121,9 +121,9 @@ export default function ProgramarCita() {
 
     const calcularDisponibilidad = async () => {
       try {
-        let horaIdeal = "08:00";
+        let horaIdeal = "07:30";
         if (formData.examen.includes("Sangre") || formData.examen.includes("Lipídico") || formData.examen.includes("Glucosa")) {
-          horaIdeal = "07:15";
+          horaIdeal = "07:30";
         } else if (formData.examen.includes("PCR")) {
           horaIdeal = "09:30";
         } else if (formData.examen.includes("Orina")) {
@@ -175,8 +175,8 @@ export default function ProgramarCita() {
     setPanelMismoDia(false);
     setErrorValidacion(null);
 
-    if (formData.hora < "08:00" || formData.hora > "18:00") {
-      setErrorValidacion("El horario de atención es estrictamente de 08:00 a 18:00 hrs.");
+    if (formData.hora < "07:30" || formData.hora > "18:00") {
+      setErrorValidacion("El horario de atención es estrictamente de 07:30 a 18:00 hrs.");
       setIsSubmitting(false);
       return;
     }
@@ -309,11 +309,19 @@ export default function ProgramarCita() {
 
             {panelConflictoHorario && (
               <div className="mb-6 bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 text-amber-300">
-                <div className="flex items-center gap-2 mb-1 font-bold"><span>⚠️</span><p>Horario ocupado</p></div>
-                <p className="text-xs text-slate-300 mb-3">La hora choca con otro turno. La IA sugiere programar a las <strong className="text-cyan-400 font-mono text-sm">{sugerenciaIA}</strong>.</p>
-                <button type="button" onClick={() => { setFormData({ ...formData, hora: sugerenciaIA }); setPanelConflictoHorario(false); }} className="bg-cyan-600 hover:bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg text-xs uppercase cursor-pointer transition-colors">
-                  Aplicar hora sugerida ({sugerenciaIA})
-                </button>
+                <div className="flex items-center gap-2 mb-1 font-bold"><span>⚠️</span><p>Horario ocupado o no disponible</p></div>
+                {sugerenciaIA === "No hay horarios disponibles hoy" ? (
+                  <p className="text-xs text-slate-300 mb-3">
+                    Ya no quedan horarios disponibles para realizar este examen el día de hoy. Por favor, selecciona una fecha futura.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-slate-300 mb-3">La hora solicitada choca con otro turno o ya es muy tarde. La IA sugiere programar a las <strong className="text-cyan-400 font-mono text-sm">{sugerenciaIA}</strong>.</p>
+                    <button type="button" onClick={() => { setFormData({ ...formData, hora: sugerenciaIA }); setPanelConflictoHorario(false); }} className="bg-cyan-600 hover:bg-cyan-500 text-slate-900 font-bold py-2 px-4 rounded-lg text-xs uppercase cursor-pointer transition-colors">
+                      Aplicar hora sugerida ({sugerenciaIA})
+                    </button>
+                  </>
+                )}
               </div>
             )}
 

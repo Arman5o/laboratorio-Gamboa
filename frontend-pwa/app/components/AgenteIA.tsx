@@ -411,6 +411,14 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
           }
         }
       }
+
+      // Filtrar para no mostrar exagerada cantidad de botones (máximo 5 opciones estratégicas)
+      if (libres.length > 5) {
+        // Tomar algunas de la mañana y algunas de la tarde si hay
+        const step = Math.floor(libres.length / 5);
+        return libres.filter((_, i) => i % step === 0).slice(0, 5);
+      }
+
       return libres;
     } catch {
       return ["07:30", "08:00", "09:00", "14:00"];
