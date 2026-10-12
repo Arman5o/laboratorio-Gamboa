@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import NetworkStatus from "./NetworkStatus"; // <-- 1. IMPORTAMOS EL DETECTOR
+import GestorNotificacionesPush from "./GestorNotificacionesPush";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,7 +35,10 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {/* 2. COLOCAMOS EL AVISO AQUÍ PARA QUE APAREZCA EN TODAS LAS PANTALLAS */}
+        {/* Gestor global de Notificaciones en la barra del teléfono */}
+        <GestorNotificacionesPush />
+        
+        {/* Aviso de pérdida de conexión */}
         <NetworkStatus />
         
         {children}

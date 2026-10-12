@@ -165,8 +165,12 @@ export class CitasService {
     const citaActualizada = await this.citaModel.findByIdAndUpdate(id, datos, { new: true }).exec();
     if (citaActualizada) {
       this.citasGateway.enviarAlertaCitaActualizada(citaActualizada);
-      // 🤖 AGENTE IA: Notificar cambio de estado al paciente
-      this.agenteIaService.notificarCambioEstado(citaActualizada).catch(() => {});
+      // 🤖 AGENTE IA: Notificar modificación o cambio de estado
+      if (datos.estado && datos.estado !== citaExistente?.estado) {
+        this.agenteIaService.notificarCambioEstado(citaActualizada).catch(() => {});
+      } else {
+        this.agenteIaService.notificarModificacionCita(citaActualizada).catch(() => {});
+      }
     }
     return citaActualizada;
   }

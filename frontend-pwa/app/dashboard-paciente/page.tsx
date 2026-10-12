@@ -106,7 +106,7 @@ export default function DashboardPaciente() {
           <Link href="/dashboard-paciente/notificaciones" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm">
             <span className="text-lg">🔔</span> Notificaciones
           </Link>
-          <Link href="#" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm"><span className="text-lg">⚙️</span> Configuración</Link>
+          <Link href="/dashboard-paciente/configuracion" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm"><span className="text-lg">⚙️</span> Configuración</Link>
         </nav>
 
         <div className="p-4 border-t border-slate-700/50">

@@ -384,10 +384,42 @@ function manejarFlujoCita(
   }
 
   if (horaExtractada) {
+    const [h, m] = horaExtractada.split(':').map(Number);
+    const minTotal = h * 60 + m;
+    const minApertura = 7 * 60 + 30; // 07:30
+    const minCierre = 18 * 60;       // 18:00
+
+    // 1. Validar que la hora esté estrictamente en horario de atención (07:30 a 18:00)
+    if (minTotal < minApertura || minTotal > minCierre) {
+      const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
+      const requiereAyuno = slots.examen ? examenesAyuno.includes(slots.examen) : true;
+      const sugerida = requiereAyuno ? "08:00" : "09:30";
+      return {
+        pensamiento: `El usuario ingresó la hora ${horaExtractada}, fuera del horario laboral (07:30 a 18:00). La rechazo y sugiero ${sugerida}.`,
+        respuesta: `⚠️ La hora **${horaExtractada}** está fuera del horario de atención del laboratorio (**07:30 a 18:00 hrs**).\n\nTe sugiero agendar a las **${sugerida}**. ¿A qué hora dentro del horario laboral prefieres asistir?`,
+        intencion: 'programar_cita',
+        accion: 'PEDIR_HORA',
+        citaSlots: { ...slots },
+      };
+    }
+
+    // 2. Si el examen requiere ayuno y es después de las 11:30
+    const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
+    if (slots.examen && examenesAyuno.includes(slots.examen) && minTotal > (11 * 60 + 30)) {
+      return {
+        pensamiento: `El usuario eligió ${horaExtractada} para ${slots.examen}, que requiere ayuno matutino. Sugiero 08:00 hrs.`,
+        respuesta: `⚠️ El **${slots.examen}** requiere ayuno obligatorio matutino, por lo que no es recomendable después de las 11:30 hrs.\n\nTe sugiero las **08:00**. ¿Qué horario por la mañana te conviene?`,
+        intencion: 'programar_cita',
+        accion: 'PEDIR_HORA',
+        citaSlots: { ...slots },
+      };
+    }
+
+    // 3. Si la fecha es hoy y la hora ya pasó
     if (slots.fecha === hoyStr && horaExtractada <= horaActualStr) {
       return {
         pensamiento: "El usuario dio una hora que ya pasó el día de hoy. La rechazo.",
-        respuesta: `⚠️ La hora **${horaExtractada}** ya pasó hoy. Por favor elige un horario posterior a la hora actual:`,
+        respuesta: `⚠️ La hora **${horaExtractada}** ya pasó el día de hoy. Por favor elige un horario posterior a la hora actual (hasta las 18:00):`,
         intencion: 'programar_cita',
         accion: 'PEDIR_HORA',
         citaSlots: { ...slots },
@@ -456,7 +488,7 @@ function manejarFlujoCita(
   if (!slots.hora) {
     return {
       pensamiento,
-      respuesta: `¡Listo! **${slots.examen}** el **${formatearFechaLegible(slots.fecha)}**.\n\n¿A qué hora prefieres venir? Atendemos de 8am a 6pm.`,
+      respuesta: `¡Listo! **${slots.examen}** el **${formatearFechaLegible(slots.fecha)}**.\n\n¿A qué hora prefieres venir? Atendemos de **07:30 a 18:00 hrs**.`,
       intencion: 'programar_cita',
       accion: 'PEDIR_HORA',
       citaSlots: { ...slots },

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { fetchAuth } from "../../utils/fetchAuth";
 import { API_URL } from "../../utils/api";
+import AgenteIA from "../../components/AgenteIA";
 
 const CATALOGO_EXAMENES = [
   "Análisis de Sangre (Rutina)",
@@ -92,30 +93,131 @@ export default function ResultadosClinicos() {
     }, 1000); 
   };
 
+  const [errorEdicion, setErrorEdicion] = useState<string | null>(null);
+  const [sugerenciaEdicion, setSugerenciaEdicion] = useState<string | null>(null);
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+
+  // Al abrir edición, resetear estados
+  const handleAbrirEdicion = (cita: any) => {
+    setCitaEditando({ ...cita });
+    setErrorEdicion(null);
+    setSugerenciaEdicion(null);
+  };
+
+  // Validar en tiempo real los cambios del modal de edición
+  const validarCambioEdicion = (nuevaFecha: string, nuevaHora: string, examen: string) => {
+    if (!nuevaFecha || !nuevaHora) {
+      setErrorEdicion(null);
+      setSugerenciaEdicion(null);
+      return;
+    }
+
+    const ahora = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const hoyStr = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}`;
+
+    // 1. Validar fecha pasada
+    if (nuevaFecha < hoyStr) {
+      setErrorEdicion("La fecha seleccionada ya pasó. Debe ser a partir de hoy.");
+      setSugerenciaEdicion(null);
+      return;
+    }
+
+    // 2. Validar fuera de horario de atención (07:30 - 18:00)
+    const [h, m] = nuevaHora.split(':').map(Number);
+    const minTotal = h * 60 + m;
+    const minApertura = 7 * 60 + 30; // 07:30
+    const minCierre = 18 * 60;       // 18:00
+
+    const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
+    const requiereAyuno = examenesAyuno.includes(examen);
+
+    if (minTotal < minApertura || minTotal > minCierre) {
+      setErrorEdicion(`La hora ${nuevaHora} está fuera del horario de atención del laboratorio (07:30 a 18:00 hrs).`);
+      setSugerenciaEdicion(requiereAyuno ? "08:00" : "09:30");
+      return;
+    }
+
+    // 3. Si requiere ayuno y es después de las 11:30
+    if (requiereAyuno && minTotal > (11 * 60 + 30)) {
+      setErrorEdicion(`Este examen (${examen}) requiere ayuno matutino. No se recomienda después de las 11:30 hrs.`);
+      setSugerenciaEdicion("08:00");
+      return;
+    }
+
+    // 4. Si es hoy y ya pasó la hora
+    if (nuevaFecha === hoyStr) {
+      const minActual = ahora.getHours() * 60 + ahora.getMinutes() + 15;
+      if (minTotal < minActual) {
+        setErrorEdicion(`La hora ${nuevaHora} ya pasó o no cumple con los 15 minutos de anticipación requeridos.`);
+        const hSugerida = Math.min(Math.max(Math.ceil(minActual / 30) * 30, minApertura), minCierre);
+        if (hSugerida <= minCierre) {
+          const hh = pad(Math.floor(hSugerida / 60));
+          const mm = pad(hSugerida % 60);
+          setSugerenciaEdicion(`${hh}:${mm}`);
+        } else {
+          setSugerenciaEdicion(null);
+        }
+        return;
+      }
+    }
+
+    // Si todo está correcto
+    setErrorEdicion(null);
+    setSugerenciaEdicion(null);
+  };
+
+
   const handleGuardarEdicion = async () => {
+    if (!citaEditando) return;
+    
+    // Validar antes de guardar
+    if (citaEditando.hora < "07:30" || citaEditando.hora > "18:00") {
+      setErrorEdicion("El horario de atención es estrictamente de 07:30 a 18:00 hrs.");
+      setSugerenciaEdicion("08:00");
+      return;
+    }
+
+    setGuardandoEdicion(true);
     try {
-      const ipActual = window.location.hostname;
       const respuesta = await fetchAuth(`${API_URL}/citas/${citaEditando.id}`, {
         method: 'PUT', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ examen: citaEditando.examen, fecha: citaEditando.fecha, hora: citaEditando.hora })
       });
+      
+      const data = await respuesta.json().catch(() => ({}));
+
       if (respuesta.ok) {
-        const citasActualizadas = citas.map(c => c.id === citaEditando.id ? citaEditando : c);
+        const citasActualizadas = citas.map(c => c.id === citaEditando.id ? { ...citaEditando } : c);
         setCitas(citasActualizadas); 
         setCitaEditando(null); 
+        setErrorEdicion(null);
+        setSugerenciaEdicion(null);
+      } else if (respuesta.status === 409 || respuesta.status === 400) {
+        if (data.tipoError === 'HORARIO_OCUPADO') {
+          setErrorEdicion(`El horario ${citaEditando.hora} ya está reservado o en conflicto con otro turno.`);
+          setSugerenciaEdicion(data.sugerencia || "08:30");
+        } else if (data.tipoError === 'DUPLICADO_DIA') {
+          setErrorEdicion("Ya cuentas con otra cita registrada para esta misma fecha.");
+          setSugerenciaEdicion(null);
+        } else {
+          setErrorEdicion(data.message || "No se pudo actualizar la cita con esos datos.");
+          if (data.sugerencia) setSugerenciaEdicion(data.sugerencia);
+        }
       } else { 
-        alert("Error al editar."); 
+        setErrorEdicion("Error al guardar cambios en el servidor."); 
       }
     } catch (error) { 
       console.error(error); 
-      alert("Error de conexión al servidor."); 
+      setErrorEdicion("Error de conexión al servidor."); 
+    } finally {
+      setGuardandoEdicion(false);
     }
   };
 
   const handleConfirmarCancelacion = async () => {
     try {
-      const ipActual = window.location.hostname;
       const respuesta = await fetchAuth(`${API_URL}/citas/${citaCancelando.id}`, { method: 'DELETE' });
       if (respuesta.ok) {
         const citasActualizadas = citas.filter(c => c.id !== citaCancelando.id);
@@ -171,7 +273,7 @@ export default function ResultadosClinicos() {
           <Link href="/dashboard-paciente/notificaciones" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm">
             <span className="text-lg">🔔</span> Notificaciones
           </Link>
-          <Link href="#" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm">
+          <Link href="/dashboard-paciente/configuracion" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm">
             <span className="text-lg">⚙️</span> Configuración
           </Link>
         </nav>
@@ -184,38 +286,53 @@ export default function ResultadosClinicos() {
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900 relative w-full">
-        <div className="bg-slate-800/50 border-b border-slate-800 p-4 px-8 hidden md:flex justify-between items-center">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100 tracking-wider uppercase">EXPEDIENTE CLÍNICO</h1>
-            <p className="text-xs text-cyan-400 font-mono tracking-widest mt-0.5">Historial de: {userEmail}</p>
+        {/* Header responsive con botón menú para móviles */}
+        <div className="bg-slate-800/50 border-b border-slate-800 p-4 px-6 md:px-8 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden text-2xl text-cyan-400 focus:outline-none">≡</button>
+            <div>
+              <h1 className="text-base md:text-lg font-bold text-slate-100 tracking-wider uppercase">EXPEDIENTE CLÍNICO</h1>
+              <p className="text-[11px] md:text-xs text-cyan-400 font-mono tracking-widest mt-0.5 truncate max-w-[200px] sm:max-w-md">Historial: {userEmail}</p>
+            </div>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-4xl mx-auto w-full">
-          <h2 className="text-sm text-slate-500 uppercase tracking-widest mb-6">MIS RESULTADOS Y RESERVAS</h2>
+          <h2 className="text-xs md:text-sm text-slate-500 uppercase tracking-widest mb-6">MIS RESULTADOS Y RESERVAS</h2>
           
           <div className="space-y-4">
             {citas.map((cita) => (
-              <div key={cita.id} className="bg-slate-800 border border-slate-700 rounded-xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-slate-500 transition-colors shadow-lg">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-100 mb-1">{cita.examen}</h3>
-                  <p className="text-sm text-slate-400">Programado para el: <span className="text-slate-300 font-medium">{cita.fecha}</span> a las <span className="text-cyan-400 font-mono">{cita.hora}</span></p>
+              <div key={cita.id} className="bg-slate-800 border border-slate-700 rounded-xl p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-5 hover:border-slate-500 transition-colors shadow-lg">
+                <div className="flex-1 min-w-[180px]">
+                  <h3 className="text-base md:text-lg font-bold text-slate-100 mb-1.5 whitespace-normal leading-snug">{cita.examen}</h3>
+                  <p className="text-xs md:text-sm text-slate-400">
+                    Programado para el: <span className="text-slate-300 font-medium">{cita.fecha}</span> a las <span className="text-cyan-400 font-mono font-bold">{cita.hora}</span>
+                  </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-4 md:gap-6 w-full md:w-auto">
-                  <div className={`px-4 py-1 rounded-full text-xs font-bold tracking-widest border w-full sm:w-auto text-center ${cita.estado === 'completada' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : cita.estado === 'confirmada' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' : cita.estado === 'cancelada' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
-                    {(cita.estado || 'pendiente').toUpperCase()}
+                {/* LOS TRES CUADROS EN PILA (ESTADO, VER DETALLES, CANCELAR) */}
+                <div className="flex flex-col gap-2.5 w-full md:w-48 shrink-0">
+                  {/* Cuadro 1: PENDIENTE / CONFIRMADA / ETC */}
+                  <div className={`px-4 py-2 rounded-lg text-xs font-bold tracking-widest border text-center uppercase shadow-sm ${cita.estado === 'completada' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : cita.estado === 'confirmada' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' : cita.estado === 'cancelada' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
+                    {cita.estado || 'pendiente'}
                   </div>
 
                   {cita.estado === 'completada' ? (
-                    <button onClick={() => handleDescargarPDF(cita.id)} disabled={descargando === cita.id} className="w-full sm:w-auto bg-transparent border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-slate-900 font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer">
-                      {descargando === cita.id ? <span className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></span> : <><span>↓</span> DESCARGAR PDF</>}
+                    <button onClick={() => handleDescargarPDF(cita.id)} disabled={descargando === cita.id} className="w-full bg-cyan-500/10 border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-slate-900 font-bold py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer text-xs uppercase shadow-sm">
+                      {descargando === cita.id ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></span> : <><span>↓</span> DESCARGAR PDF</>}
                     </button>
                   ) : (
-                    <div className="flex w-full sm:w-auto gap-2">
-                      <button onClick={() => setCitaEditando({ ...cita })} className="flex-1 sm:flex-none bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"><span>👁</span> VER DETALLES</button>
-                      <button onClick={() => setCitaCancelando(cita)} className="flex-1 sm:flex-none bg-transparent border border-rose-500/50 text-rose-400 hover:bg-rose-500 hover:text-slate-900 font-medium py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"><span>🗑</span> CANCELAR</button>
-                    </div>
+                    <>
+                      {/* Cuadro 2: VER DETALLES */}
+                      <button onClick={() => handleAbrirEdicion(cita)} className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2.5 px-4 rounded-lg transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm uppercase tracking-wider">
+                        <span>👁</span> VER DETALLES
+                      </button>
+
+                      {/* Cuadro 3: CANCELAR */}
+                      <button onClick={() => setCitaCancelando(cita)} className="w-full bg-transparent border border-rose-500/50 text-rose-400 hover:bg-rose-500 hover:text-slate-900 font-bold py-2.5 px-4 rounded-lg transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm uppercase tracking-wider">
+                        <span>🗑</span> CANCELAR
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -244,36 +361,107 @@ export default function ResultadosClinicos() {
         </div>
       )}
 
-      {/* Modal Ver Detalles / Editar Cita */}
+      {/* Modal Ver Detalles / Editar Cita con ASISTENTE IA */}
       {citaEditando && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 md:p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-xl font-bold text-cyan-400 mb-1">Detalles de la Reserva</h2>
-            <p className="text-slate-400 text-xs mb-6 uppercase tracking-widest">ID: {citaEditando.id}</p>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 md:p-8 max-w-lg w-full shadow-2xl my-auto">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-bold text-cyan-400">Detalles de la Reserva</h2>
+              <span className="text-[10px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-2 py-0.5 rounded-full font-mono">EDITAR</span>
+            </div>
+            <p className="text-slate-400 text-xs mb-5 uppercase tracking-widest font-mono">ID: {citaEditando.id}</p>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-slate-400 text-xs mb-1 uppercase">Tipo de Examen</label>
-                <select value={citaEditando.examen} onChange={(e) => setCitaEditando({ ...citaEditando, examen: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-cyan-400">
+                <label className="block text-slate-400 text-xs mb-1.5 uppercase tracking-wider">Tipo de Examen</label>
+                <select 
+                  value={citaEditando.examen} 
+                  onChange={(e) => {
+                    const nuevoEx = e.target.value;
+                    setCitaEditando({ ...citaEditando, examen: nuevoEx });
+                    validarCambioEdicion(citaEditando.fecha, citaEditando.hora, nuevoEx);
+                  }} 
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-cyan-400 text-sm"
+                >
                   {CATALOGO_EXAMENES.map((ex) => <option key={ex} value={ex}>{ex}</option> )}
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-slate-400 text-xs mb-1 uppercase">Fecha</label>
-                  <input type="date" value={citaEditando.fecha} onChange={(e) => setCitaEditando({ ...citaEditando, fecha: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-cyan-400 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"/>
+                  <label className="block text-slate-400 text-xs mb-1.5 uppercase tracking-wider">Fecha</label>
+                  <input 
+                    type="date" 
+                    value={citaEditando.fecha} 
+                    onChange={(e) => {
+                      const nuevaF = e.target.value;
+                      setCitaEditando({ ...citaEditando, fecha: nuevaF });
+                      validarCambioEdicion(nuevaF, citaEditando.hora, citaEditando.examen);
+                    }} 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-cyan-400 text-sm [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
+                  />
                 </div>
                 <div>
-                  <label className="block text-slate-400 text-xs mb-1 uppercase">Hora</label>
-                  <input type="time" value={citaEditando.hora} onChange={(e) => setCitaEditando({ ...citaEditando, hora: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-cyan-400 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"/>
+                  <label className="block text-slate-400 text-xs mb-1.5 uppercase tracking-wider">Hora (07:30 a 18:00)</label>
+                  <input 
+                    type="time" 
+                    value={citaEditando.hora} 
+                    onChange={(e) => {
+                      const nuevaH = e.target.value;
+                      setCitaEditando({ ...citaEditando, hora: nuevaH });
+                      validarCambioEdicion(citaEditando.fecha, nuevaH, citaEditando.examen);
+                    }} 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-cyan-400 text-sm [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
+                  />
                 </div>
               </div>
+
+              {/* 🤖 ADVERTENCIA / SUGERENCIA DEL AGENTE IA EN TIEMPO REAL */}
+              {errorEdicion && (
+                <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 text-amber-200 text-xs space-y-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-xl shrink-0">🤖</span>
+                    <div>
+                      <p className="font-bold text-amber-400 mb-0.5">Advertencia del Agente IA:</p>
+                      <p className="text-slate-300 leading-relaxed">{errorEdicion}</p>
+                    </div>
+                  </div>
+
+                  {sugerenciaEdicion && (
+                    <div className="pt-2 border-t border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <p className="text-cyan-400 font-medium">
+                        💡 Horario recomendado: <strong className="font-mono text-white text-sm">{sugerenciaEdicion}</strong>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCitaEditando({ ...citaEditando, hora: sugerenciaEdicion });
+                          validarCambioEdicion(citaEditando.fecha, sugerenciaEdicion, citaEditando.examen);
+                        }}
+                        className="bg-cyan-600 hover:bg-cyan-500 text-slate-900 font-bold px-3 py-1.5 rounded-lg text-xs uppercase cursor-pointer transition-colors shrink-0"
+                      >
+                        Aplicar {sugerenciaEdicion}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="mt-8 flex gap-3">
-              <button onClick={() => setCitaEditando(null)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-3 rounded-lg transition-colors text-sm cursor-pointer">VOLVER</button>
-              <button onClick={handleGuardarEdicion} className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-slate-900 font-bold py-3 rounded-lg transition-colors text-sm cursor-pointer">GUARDAR</button>
+            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              <button 
+                onClick={() => { setCitaEditando(null); setErrorEdicion(null); setSugerenciaEdicion(null); }} 
+                className="w-full sm:flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-3 rounded-lg transition-colors text-sm cursor-pointer order-2 sm:order-1"
+              >
+                VOLVER
+              </button>
+              <button 
+                onClick={handleGuardarEdicion} 
+                disabled={guardandoEdicion || !!errorEdicion}
+                className="w-full sm:flex-1 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-900 font-bold py-3 rounded-lg transition-colors text-sm cursor-pointer order-1 sm:order-2"
+              >
+                {guardandoEdicion ? "GUARDANDO..." : "GUARDAR CAMBIOS"}
+              </button>
             </div>
           </div>
         </div>
@@ -295,6 +483,8 @@ export default function ResultadosClinicos() {
           </div>
         </div>
       )}
+      {/* Agente IA Asistente */}
+      <AgenteIA rol="paciente" />
     </div>
   );
 }

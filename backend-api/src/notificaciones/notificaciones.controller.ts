@@ -5,6 +5,11 @@ import { NotificacionesService } from './notificaciones.service';
 export class NotificacionesController {
   constructor(private readonly notificacionesService: NotificacionesService) {}
 
+  @Get('paciente/:destinatario')
+  async obtenerNotificacionesPaciente(@Param('destinatario') destinatario: string) {
+    return this.notificacionesService.obtenerPorDestinatario(destinatario);
+  }
+
   @Get(':destinatario')
   async obtenerNotificaciones(@Param('destinatario') destinatario: string) {
     return this.notificacionesService.obtenerPorDestinatario(destinatario);

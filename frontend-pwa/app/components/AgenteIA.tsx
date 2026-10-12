@@ -425,12 +425,69 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     }
   };
 
-  // ─── CREAR CITA ────────────────────────────────────────
+  // ─── MODIFICAR CITA EXISTENTE EN LUGAR DE DUPLICAR ─────────────
+  const modificarCitaExistente = async (idCita: string, form: CitaForm) => {
+    setFlujo("creando");
+    setMood("confirm");
+    try {
+      const res = await fetchAuth(`${API_URL}/citas/${idCita}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          examen: form.examen,
+          fecha: form.fecha,
+          hora: form.hora,
+        }),
+      });
+
+      if (res.ok) {
+        push(
+          agente(
+            `✅ **¡Tu cita ha sido modificada exitosamente!**\n\n🔬 **${form.examen}**\n📆 **${form.fecha}**\n🕐 **${form.hora}**\n\nHemos actualizado tu reserva sin generar registros duplicados. 😊`,
+            "exito"
+          )
+        );
+        setMood("happy");
+        setTimeout(() => setMood("idle"), 3000);
+        setFlujo("idle");
+        setCitaForm({});
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setMood("alert");
+        push(
+          agente(
+            `⚠️ ${data.message || "No pudimos modificar la cita con esos datos. El horario podría estar en conflicto."}`,
+            "error"
+          )
+        );
+        setFlujo("idle");
+      }
+    } catch {
+      push(agente("❌ Error de conexión al intentar actualizar la cita.", "error"));
+      setFlujo("idle");
+    }
+  };
+
+  // ─── CREAR O MODIFICAR CITA ────────────────────────────
   const crearCita = async (form: CitaForm) => {
     setFlujo("creando");
     setMood("confirm");
     const correo = localStorage.getItem("pacienteEmail") ?? "";
     const nombre = localStorage.getItem("pacienteName") ?? "";
+
+    // 0. Validación de horario de atención en el frontend
+    if (form.hora < "07:30" || form.hora > "18:00") {
+      setMood("alert");
+      push(
+        agente(
+          `⚠️ La hora **${form.hora}** está fuera del horario de atención del laboratorio (**07:30 a 18:00 hrs**).\n\nTe sugiero agendar a las **08:00** o **09:30**. ¿Deseas elegir un horario válido?`,
+          "opciones",
+          { opciones: ["08:00", "08:30", "09:00", "10:00", "14:00"] }
+        )
+      );
+      setFlujo("esperando_hora");
+      return;
+    }
 
     try {
       const res = await fetchAuth(`${API_URL}/citas/nueva`, {
@@ -458,16 +515,25 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         setFlujo("idle");
         setCitaForm({});
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setMood("alert");
         if (data.tipoError === "DUPLICADO_DIA") {
+          const citaExistente = data.citaExistente;
           push(
             agente(
-              `⚠️ Ya tienes una cita activa para el **${form.fecha}**. Por favor elige otra fecha:`,
-              "fecha"
+              `⚠️ Ya tienes una cita programada para el **${form.fecha}** (${citaExistente?.examen || "Examen"} a las **${citaExistente?.hora || "horario agendado"}**).\n\n💡 **Sugerencia del Agente IA:** En lugar de crear una cita duplicada, ¿prefieres modificar la cita existente con este nuevo estudio/horario (**${form.examen} a las ${form.hora}**)?`,
+              "opciones",
+              {
+                opciones: [
+                  `🔄 Modificar cita existente (${form.hora})`,
+                  "📅 Elegir otra fecha",
+                  "❌ Cancelar"
+                ],
+                dataCita: { ...form, idCitaExistente: citaExistente?._id } as any
+              }
             )
           );
-          setFlujo("esperando_fecha");
+          setFlujo("idle"); // Espera que el usuario elija la opción
         } else if (data.tipoError === "HORARIO_OCUPADO") {
           push(
             agente(
@@ -483,10 +549,10 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
           push(agente(`⚠️ No puedes elegir una fecha en el pasado. Por favor elige una fecha válida:`, "fecha"));
           setFlujo("esperando_fecha");
         } else if (data.tipoError === "HORA_PASADA") {
-          push(agente(`⚠️ La hora que elegiste ya pasó el día de hoy. Por favor elige otro horario:`, "opciones", { opciones: horariosDisp }));
+          push(agente(`⚠️ La hora que elegiste ya pasó el día de hoy. Por favor elige otro horario dentro de las 07:30 a 18:00:`, "opciones", { opciones: horariosDisp }));
           setFlujo("esperando_hora");
         } else {
-          push(agente("❌ Hubo un error al crear la cita. Por favor intenta de nuevo.", "error"));
+          push(agente(`❌ ${data.message || "Hubo un error al crear la cita. Por favor intenta de nuevo."}`, "error"));
           setFlujo("idle");
           setCitaForm({});
           setTimeout(() => setMood("idle"), 2000);
@@ -516,6 +582,38 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   const handleOpcion = async (opcion: string) => {
     push(usuario(opcion));
 
+    if (opcion.startsWith("🔄 Modificar cita existente")) {
+      const form = citaForm as any;
+      if (form?.idCitaExistente && form?.fecha && form?.hora) {
+        push(agente("⏳ Actualizando tu cita activa..."));
+        await modificarCitaExistente(form.idCitaExistente, form);
+        return;
+      } else {
+        // Intentar buscar la cita activa de esa fecha
+        try {
+          const correo = localStorage.getItem("pacienteEmail") ?? "";
+          const res = await fetchAuth(`${API_URL}/citas/paciente/${correo}`);
+          if (res.ok) {
+            const citas = await res.json();
+            const citaMismoDia = citas.find((c: any) => c.fecha === form.fecha && c.estado !== 'cancelada');
+            if (citaMismoDia) {
+              push(agente("⏳ Actualizando tu cita activa..."));
+              await modificarCitaExistente(citaMismoDia._id, form);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+
+    if (opcion === "📅 Elegir otra fecha") {
+      push(agente("Selecciona una nueva fecha para tu estudio:", "fecha"));
+      setFlujo("esperando_fecha");
+      return;
+    }
+
     if (flujo === "confirmando") {
       if (opcion === "✅ Confirmar cita") {
         const form = citaForm as CitaForm;
@@ -528,7 +626,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         push(agente("Cita cancelada. ¿Puedo ayudarte con algo más? 😊"));
       } else if (opcion === "✏️ Cambiar horario") {
         setFlujo("esperando_hora");
-        push(agente("Claro, selecciona un nuevo horario:", "opciones", { opciones: horariosDisp }));
+        push(agente("Claro, selecciona un nuevo horario dentro del horario de atención (07:30 a 18:00):", "opciones", { opciones: horariosDisp }));
       }
     } else {
       await enviarAlBackend(opcion);

@@ -6,13 +6,13 @@ export class Usuario extends Document {
   @Prop({ required: true })
   nombre!: string;
 
-  @Prop({ required: true })
+  @Prop({ required: true, unique: true, index: true })
   ci!: string;
 
   @Prop({ required: true })
   celular!: string;
 
-  @Prop({ required: true })
+  @Prop({ required: true, unique: true, index: true })
   correo!: string;
 
   @Prop({ required: true })

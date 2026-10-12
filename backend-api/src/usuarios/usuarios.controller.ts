@@ -55,6 +55,37 @@ export class UsuariosController {
   // 👇 RUTAS PROTEGIDAS CON JWT 👇
   // =======================================================
 
+  // Obtener perfil del usuario autenticado
+  @UseGuards(JwtAuthGuard)
+  @Get('perfil/:correo')
+  async obtenerPerfil(@Param('correo') correo: string) {
+    return await this.usuariosService.obtenerPerfil(correo);
+  }
+
+  // Actualizar datos del perfil (nombre, celular, CI)
+  @UseGuards(JwtAuthGuard)
+  @Put('perfil/:correo')
+  async actualizarPerfil(
+    @Param('correo') correo: string,
+    @Body() body: { nombre?: string; celular?: string; ci?: string },
+  ) {
+    return await this.usuariosService.actualizarPerfil(correo, body);
+  }
+
+  // Cambiar contraseña desde el panel de configuración
+  @UseGuards(JwtAuthGuard)
+  @Put('cambiar-password/:correo')
+  async cambiarPassword(
+    @Param('correo') correo: string,
+    @Body() body: { passwordActual: string; nuevaPassword: string },
+  ) {
+    return await this.usuariosService.cambiarPasswordAutenticado(
+      correo,
+      body.passwordActual,
+      body.nuevaPassword,
+    );
+  }
+
   // Obtener toda la lista de pacientes registrados (solo autenticados)
   @UseGuards(JwtAuthGuard)
   @Get()

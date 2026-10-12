@@ -29,8 +29,9 @@ export class NotificacionesService {
   }
 
   async obtenerPorDestinatario(destinatario: string): Promise<Notificacion[]> {
+    const regex = new RegExp(`^${destinatario.trim()}$`, 'i');
     return await this.notificacionModel
-      .find({ destinatario })
+      .find({ destinatario: regex })
       .sort({ createdAt: -1 })
       .limit(100)
       .exec();
@@ -43,6 +44,7 @@ export class NotificacionesService {
   }
 
   async limpiarPorDestinatario(destinatario: string): Promise<any> {
-    return await this.notificacionModel.deleteMany({ destinatario }).exec();
+    const regex = new RegExp(`^${destinatario.trim()}$`, 'i');
+    return await this.notificacionModel.deleteMany({ destinatario: regex }).exec();
   }
 }

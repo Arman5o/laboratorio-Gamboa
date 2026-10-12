@@ -44,9 +44,17 @@ export default function Registro() {
       }
     }
 
+    if (name === "ci") {
+      if (value.length > 0 && value.length < 5) {
+        errorMsg = "El C.I. debe tener al menos 5 dígitos.";
+      }
+    }
+
     if (name === "correo") {
-      if (value.length > 0 && !value.endsWith("@gmail.com")) {
-        errorMsg = "Debe ser un correo @gmail.com válido.";
+      // Permitir cualquier dominio de correo válido (Gmail, Hotmail, Outlook, Yahoo, institucional, etc.)
+      const regexCorreo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (value.length > 0 && !regexCorreo.test(value)) {
+        errorMsg = "Ingrese un correo electrónico válido (ej. usuario@correo.com).";
       }
     }
 
@@ -163,14 +171,14 @@ export default function Registro() {
             </div>
 
             <div>
-              <label className="block text-slate-400 text-sm mb-1">Correo electrónico (@gmail.com)</label>
+              <label className="block text-slate-400 text-sm mb-1">Correo electrónico</label>
               <input 
                 type="email" 
                 name="correo"
                 value={formData.correo}
                 onChange={handleChange}
                 className={`w-full bg-slate-900 border rounded-lg px-4 py-3 text-slate-200 focus:outline-none transition-all ${errores.correo ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400'}`} 
-                placeholder="ejemplo@gmail.com" 
+                placeholder="ejemplo@correo.com" 
               />
               {errores.correo && <p className="text-rose-500 text-xs mt-1">{errores.correo}</p>}
             </div>

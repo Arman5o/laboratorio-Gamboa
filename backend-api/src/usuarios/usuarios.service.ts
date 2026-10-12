@@ -37,6 +37,25 @@ export class UsuariosService {
     // Validar fortaleza de contraseña
     this.validarPassword(datosRegistro.password);
 
+    const correoLimpio = datosRegistro.correo ? datosRegistro.correo.trim().toLowerCase() : '';
+    const ciLimpio = datosRegistro.ci ? String(datosRegistro.ci).trim() : '';
+
+    if (!ciLimpio) {
+      throw new BadRequestException('El número de Cédula de Identidad (C.I.) es obligatorio.');
+    }
+
+    // 1. Validar si el C.I. ya existe registrado
+    const ciExistente = await this.usuarioModel.findOne({ ci: ciLimpio }).exec();
+    if (ciExistente) {
+      throw new ConflictException(`El C.I. "${ciLimpio}" ya se encuentra registrado con otro paciente. Debe ser un identificador único.`);
+    }
+
+    // 2. Validar si el correo ya existe registrado
+    const correoExistente = await this.usuarioModel.findOne({ correo: correoLimpio }).exec();
+    if (correoExistente) {
+      throw new ConflictException(`El correo electrónico "${correoLimpio}" ya se encuentra registrado.`);
+    }
+
     try {
       // Hashear contraseña con bcrypt (10 rondas de salt)
       const saltRounds = 10;
@@ -44,13 +63,17 @@ export class UsuariosService {
 
       const nuevoUsuario = new this.usuarioModel({
         ...datosRegistro,
-        correo: datosRegistro.correo.trim().toLowerCase(), // VALIDACIÓN ESTRICTA
+        ci: ciLimpio,
+        correo: correoLimpio,
         password: passwordHasheada, // ← CONTRASEÑA HASHEADA
       });
       return await nuevoUsuario.save();
     } catch (error: any) {
       if (error.code === 11000) {
-        throw new ConflictException('Este correo electrónico ya está registrado.');
+        if (error.keyPattern && error.keyPattern.ci) {
+          throw new ConflictException(`El C.I. "${ciLimpio}" ya se encuentra registrado. Debe ser un documento de identidad único.`);
+        }
+        throw new ConflictException('Este correo electrónico o C.I. ya está registrado.');
       }
       throw new BadRequestException('No se pudo completar el registro: ' + error.message);
     }
@@ -101,6 +124,70 @@ export class UsuariosService {
 
   async obtenerTodos(): Promise<Usuario[]> {
     return await this.usuarioModel.find().exec();
+  }
+
+  async obtenerPerfil(correo: string): Promise<any> {
+    const usuario = await this.usuarioModel.findOne({ correo: correo.trim().toLowerCase() }).exec();
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    return {
+      id: usuario._id,
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      ci: usuario.ci,
+      celular: usuario.celular,
+      createdAt: (usuario as any).createdAt,
+    };
+  }
+
+  async actualizarPerfil(correo: string, datos: { nombre?: string; celular?: string; ci?: string }): Promise<any> {
+    const usuario = await this.usuarioModel.findOne({ correo: correo.trim().toLowerCase() }).exec();
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (datos.nombre) usuario.nombre = datos.nombre.trim();
+    if (datos.celular) usuario.celular = datos.celular.trim();
+    if (datos.ci) usuario.ci = datos.ci.trim();
+
+    await usuario.save();
+    return {
+      ok: true,
+      mensaje: 'Perfil actualizado exitosamente',
+      usuario: {
+        id: usuario._id,
+        nombre: usuario.nombre,
+        correo: usuario.correo,
+        ci: usuario.ci,
+        celular: usuario.celular,
+      },
+    };
+  }
+
+  async cambiarPasswordAutenticado(
+    correo: string,
+    passwordActual: string,
+    nuevaPassword: string,
+  ): Promise<any> {
+    const usuario = await this.usuarioModel.findOne({ correo: correo.trim().toLowerCase() }).exec();
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Verificar contraseña actual con bcrypt
+    const esCorrecta = await bcrypt.compare(passwordActual, usuario.password);
+    if (!esCorrecta) {
+      throw new UnauthorizedException('La contraseña actual ingresada es incorrecta.');
+    }
+
+    // Validar fortaleza y hashear nueva contraseña
+    this.validarPassword(nuevaPassword);
+    const saltRounds = 10;
+    usuario.password = await bcrypt.hash(nuevaPassword, saltRounds);
+    await usuario.save();
+
+    return { ok: true, mensaje: 'Contraseña actualizada con éxito.' };
   }
 
   async actualizarUsuario(id: string, datos: any): Promise<Usuario | null> {

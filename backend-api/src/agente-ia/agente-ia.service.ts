@@ -234,11 +234,42 @@ export class AgenteIaService {
     this.citasGateway.server.emit('agente:recordatorio', { tipo: 'RECORDATORIO', mensaje: `Recordatorio enviado a ${cita.pacienteNombre} para su cita del ${cita.fecha}`, cita });
   }
 
+  async notificarModificacionCita(cita: any) {
+    const html = `
+      <div style="font-family:sans-serif;background:#0f172a;color:#e2e8f0;padding:32px;border-radius:12px;max-width:520px;margin:auto">
+        <div style="background:#0e7490;padding:12px 20px;border-radius:8px;margin-bottom:24px">
+          <p style="margin:0;font-weight:bold;color:#fff">🔄 AGENTE IA — REPROGRAMACIÓN DE CITA</p>
+        </div>
+        <h2 style="font-size:18px">✏️ Cita Reprogramada: ${cita.examen}</h2>
+        <p style="color:#94a3b8">Tu cita ha sido actualizada exitosamente para el <strong style="color:#f1f5f9">${cita.fecha}</strong> a las <strong style="color:#22d3ee">${cita.hora}</strong>.</p>
+      </div>`;
+    await this.emailService.enviarNotificacion(cita.pacienteCorreo, `✏️ Cita modificada — ${cita.examen}`, html).catch(() => {});
+    await this.notificacionesService.crearNotificacion({
+      tipo: 'ACTUALIZACION',
+      mensaje: `Tu cita para ${cita.examen} ha sido reprogramada para el ${cita.fecha} a las ${cita.hora}.`,
+      destinatario: cita.pacienteCorreo,
+      cita,
+    }).catch(() => {});
+    await this.notificacionesService.crearNotificacion({
+      tipo: 'ACTUALIZACION',
+      mensaje: `Cita de ${cita.pacienteNombre ?? cita.pacienteCorreo} reprogramada para ${cita.fecha} a las ${cita.hora}.`,
+      destinatario: 'admin',
+      cita,
+    }).catch(() => {});
+    this.citasGateway.server.emit('agente:estadoCita', {
+      tipo: 'ACTUALIZACION',
+      estado: cita.estado,
+      mensaje: `Cita de ${cita.pacienteNombre ?? cita.pacienteCorreo} reprogramada para ${cita.fecha} a las ${cita.hora}`,
+      cita,
+    });
+  }
+
   async notificarCambioEstado(cita: any) {
     const mensajes: Record<string, { asunto: string; icono: string; color: string; texto: string }> = {
       cancelada:  { asunto: '❌ Tu cita fue cancelada', icono: '❌', color: '#dc2626', texto: 'Ha sido cancelada' },
       confirmada: { asunto: '✅ Tu cita fue confirmada', icono: '✅', color: '#16a34a', texto: 'Ha sido confirmada por el laboratorio' },
       completada: { asunto: '🏁 Tu cita fue completada', icono: '🏁', color: '#0e7490', texto: 'Ha sido marcada como completada' },
+      pendiente:  { asunto: '⏳ Tu cita está pendiente', icono: '⏳', color: '#f59e0b', texto: 'Se encuentra en estado pendiente' },
     };
     const info = mensajes[cita.estado];
     if (!info) return;
@@ -250,7 +281,7 @@ export class AgenteIaService {
         <h2 style="font-size:18px">${info.icono} Actualización: ${cita.examen}</h2>
         <p style="color:#94a3b8">Tu cita para el <strong style="color:#f1f5f9">${cita.fecha}</strong> a las <strong style="color:#22d3ee">${cita.hora}</strong> — ${info.texto}.</p>
       </div>`;
-    await this.emailService.enviarNotificacion(cita.pacienteCorreo, info.asunto, html);
+    await this.emailService.enviarNotificacion(cita.pacienteCorreo, info.asunto, html).catch(() => {});
     await this.notificacionesService.crearNotificacion({ tipo: 'ESTADO_ACTUALIZADO', mensaje: `Tu cita de ${cita.examen} ${info.texto}`, destinatario: cita.pacienteCorreo, cita });
     await this.notificacionesService.crearNotificacion({ tipo: 'ESTADO_ACTUALIZADO', mensaje: `Cita de ${cita.pacienteNombre}: ${info.texto}`, destinatario: 'admin', cita });
     this.citasGateway.server.emit('agente:estadoCita', { tipo: 'ESTADO_ACTUALIZADO', estado: cita.estado, mensaje: `Cita de ${cita.pacienteNombre}: ${info.texto}`, cita });

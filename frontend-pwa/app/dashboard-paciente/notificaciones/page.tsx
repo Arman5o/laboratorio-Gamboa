@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { API_URL } from "../../utils/api";
+import { fetchAuth } from "../../utils/fetchAuth";
 
 type Notificacion = {
   id: string;
@@ -51,7 +52,7 @@ export default function NotificacionesPaciente() {
     // ==========================================
     const cargarNotificaciones = async () => {
       try {
-        const res = await fetch(`${API_URL}/notificaciones/paciente/${encodeURIComponent(email)}`);
+        const res = await fetchAuth(`${API_URL}/notificaciones/paciente/${encodeURIComponent(email)}`);
         if (res.ok) {
           const data = await res.json();
           const historial = data.map((n: any) => ({
@@ -84,21 +85,26 @@ export default function NotificacionesPaciente() {
 
     // ==========================================
     // 🎧 LISTENERS DEL SOCKET
-    // Escuchamos eventos específicos emitidos por el backend.
-    // Cuando ocurre un evento, verificamos si es para este usuario
-    // y lo agregamos a la lista de notificaciones de la UI.
     // ==========================================
+    const correoLimpio = email.trim().toLowerCase();
+
     socket.on("agente:nuevaCita", (d: any) => {
-      if (d.cita?.pacienteCorreo === email) agregar("NUEVA_CITA", d.mensaje);
+      const remitente = (d.cita?.pacienteCorreo || d.pacienteCorreo || "").trim().toLowerCase();
+      if (remitente === correoLimpio) agregar("NUEVA_CITA", d.mensaje);
     });
     socket.on("agente:recordatorio", (d: any) => {
-      if (d.cita?.pacienteCorreo === email) agregar("RECORDATORIO", d.mensaje);
+      const remitente = (d.cita?.pacienteCorreo || d.pacienteCorreo || "").trim().toLowerCase();
+      if (remitente === correoLimpio) agregar("RECORDATORIO", d.mensaje);
     });
     socket.on("agente:estadoCita", (d: any) => {
-      if (d.cita?.pacienteCorreo === email) agregar("ESTADO", d.mensaje);
+      const remitente = (d.cita?.pacienteCorreo || d.pacienteCorreo || "").trim().toLowerCase();
+      if (remitente === correoLimpio) agregar("ESTADO", d.mensaje);
     });
     socket.on("citaActualizada", (c: any) => {
-      if (c.pacienteCorreo === email) agregar("ACTUALIZACION", `Tu cita para ${c.examen} ha cambiado a estado: ${c.estado}`);
+      const remitente = (c.pacienteCorreo || "").trim().toLowerCase();
+      if (remitente === correoLimpio) {
+        agregar("ACTUALIZACION", `Tu cita para ${c.examen} ha cambiado a: ${c.fecha} a las ${c.hora} (${c.estado})`);
+      }
     });
 
     // Cleanup: Desconectar el socket cuando el componente se desmonta
@@ -108,7 +114,7 @@ export default function NotificacionesPaciente() {
   const marcarLeida = async (id: string) => {
     setNotificaciones((prev) => prev.map((n) => n.id === id ? { ...n, leida: true } : n));
     try {
-      await fetch(`${API_URL}/notificaciones/${id}/leer`, { method: "PUT" });
+      await fetchAuth(`${API_URL}/notificaciones/${id}/leer`, { method: "PUT" });
     } catch (e) {
       console.error(e);
     }
@@ -119,7 +125,7 @@ export default function NotificacionesPaciente() {
     try {
       const correo = localStorage.getItem("pacienteEmail");
       if (correo) {
-        await fetch(`${API_URL}/notificaciones/${correo}/limpiar`, { method: "DELETE" });
+        await fetchAuth(`${API_URL}/notificaciones/${encodeURIComponent(correo)}/limpiar`, { method: "DELETE" });
       }
     } catch (e) {
       console.error(e);
@@ -176,7 +182,7 @@ export default function NotificacionesPaciente() {
             <span className="text-lg">🔔</span> Notificaciones
             {noLeidas > 0 && <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{noLeidas}</span>}
           </Link>
-          <Link href="#" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm"><span className="text-lg">⚙️</span> Configuración</Link>
+          <Link href="/dashboard-paciente/configuracion" className="flex items-center gap-3 px-6 py-3.5 text-slate-400 hover:bg-slate-700 hover:text-cyan-400 border-l-4 border-transparent transition-colors text-sm"><span className="text-lg">⚙️</span> Configuración</Link>
         </nav>
         <div className="p-4 border-t border-slate-700/50">
           <Link href="/login" onClick={() => localStorage.clear()} className="flex items-center justify-center gap-2 w-full bg-slate-900 hover:bg-rose-500 text-rose-400 font-bold py-2.5 rounded-lg border border-slate-700 text-xs">
