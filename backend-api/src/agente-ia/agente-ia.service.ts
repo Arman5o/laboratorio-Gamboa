@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron } from '@nestjs/schedule';
 import { Model } from 'mongoose';
@@ -8,10 +8,13 @@ import { Cita } from '../citas/schemas/cita.schema';
 import { LogAgente } from './schemas/log-agente.schema';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { procesarConMotorDeReglas, ContextoSesion } from './motor-reglas';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 @Injectable()
-export class AgenteIaService {
+export class AgenteIaService implements OnModuleInit {
   private readonly logger = new Logger('AgenteIA');
+  private genAI: GoogleGenerativeAI | null = null;
+  private geminiModel: any = null;
 
   // Contextos de sesión por sessionId (memoria de conversación)
   private readonly sesiones = new Map<string, ContextoSesion>();
@@ -23,6 +26,34 @@ export class AgenteIaService {
     @InjectModel(LogAgente.name) private logModel: Model<LogAgente>,
     private readonly notificacionesService: NotificacionesService,
   ) {}
+
+  onModuleInit() {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      try {
+        this.genAI = new GoogleGenerativeAI(apiKey);
+        this.geminiModel = this.genAI.getGenerativeModel({
+          model: 'gemini-3.5-flash-lite',
+          systemInstruction: `Eres AIDA, el Agente Inteligente del Laboratorio Clínico Gamboa (Dr. Armando Gamboa Orellana).
+Tu rol es interactuar con el paciente o usuario de manera empática, profesional y altamente inteligente.
+Debes responder SIEMPRE en formato JSON estricto con esta estructura:
+{
+  "pensamiento": "Paso 1 (Percepción lingüística): idioma y tono... Paso 2 (Corrección léxica/typos detectados si los hay): términos corregidos... Paso 3 (Comprensión semántica): qué busca o pregunta el usuario... Paso 4 (Razonamiento contextual): justificación de la respuesta clínica.",
+  "respuesta": "Tu respuesta médica/asistencial clara, empática y útil para el paciente",
+  "intencion": "SALUDO | CONSULTA_PRECIOS | HORARIOS | UBICACION | PREPARACION | PROGRAMAR_CITA | DUDAS_CLINICAS | RESULTADOS | DIRECTOR_MEDICO | CHARLA_LIBRE"
+}
+Reglas operativas y entrenamiento:
+1. Responde a CUALQUIER cosa que pregunte o diga el paciente o usuario, incluso con un simple "hola", iniciando un diálogo interactivo y atento.
+2. Si el usuario escribe palabras con letras mezcladas, abreviaciones de chat o errores de tipeo (ej: 'hla', 'q tal', 'sngre', 'orna', 'qiero agndar'), deduce lo que quiso decir con pensamiento razonable e indícalo en el Paso 2 de tu pensamiento.
+3. Si el usuario escribe en chino (中文), español, o ambos mezclados (ej: '你好 quiero saber el precio', '你好我想做血液检查'), comprende fluidamente y responde con cortesía bilingüe o en su idioma según corresponda.
+4. Datos del laboratorio: Director Médico: Dr. Armando Gamboa Orellana. Horario: Lunes a Viernes 07:30 a 18:00 (toma de muestras en ayunas de 07:30 a 11:30). Exámenes disponibles: Análisis de Sangre (Rutina), Detección Molecular (PCR), Análisis de Orina (Completo), Perfil Lipídico, Prueba de Tolerancia a la Glucosa. Resultados en 24h (PCR 24-48h).`,
+        });
+        this.logger.log('🧠 [AIDA] Copiloto neuronal Gemini 3.5 Flash-Lite inicializado con éxito');
+      } catch (err) {
+        this.logger.warn(`⚠️ [AIDA] No se pudo conectar con Gemini: ${err}`);
+      }
+    }
+  }
 
   // ═══════════════════════════════════════════════
   // ██  AGENTE INTELIGENTE — CICLO AUTÓNOMO       ██
@@ -304,7 +335,6 @@ export class AgenteIaService {
     nombrePaciente?: string,
     historial?: Array<{ de: string; texto: string }>,
   ): Promise<any> {
-
     // Recuperar o crear contexto de sesión
     const idSesion = sessionId ?? `anon_${Date.now()}`;
     let contexto = this.sesiones.get(idSesion);
@@ -326,12 +356,48 @@ export class AgenteIaService {
 
     this.logger.log(`💬 [AIDA] Turno ${contexto.turno + 1} — sesión: ${idSesion}`);
 
-    // Procesar con el motor de reglas local
-    const resultado = procesarConMotorDeReglas(mensaje, contexto);
+    // 1. Ejecutar el motor cognitivo de reglas local (100% autónomo y determinista para citas)
+    const resultadoLocal = procesarConMotorDeReglas(mensaje, contexto);
 
-    this.logger.log(`💭 [AIDA] Intención: [${resultado.intencion}]`);
+    // 2. Si el flujo requiere acción de citas (PEDIR_EXAMEN, PEDIR_FECHA, PEDIR_HORA, CONFIRMAR_CITA),
+    // retornamos inmediatamente para que el frontend active los componentes interactivos
+    if (resultadoLocal.accion) {
+      this.logger.log(`🎯 [AIDA Citas] Acción: ${resultadoLocal.accion} [${resultadoLocal.intencion}]`);
+      return resultadoLocal as any;
+    }
 
-    return resultado as any;
+    // 3. Si Gemini 3.5 Flash-Lite está activo, enriquecemos la conversación
+    if (this.geminiModel) {
+      try {
+        const promptChat = `Paciente: ${nombrePaciente || 'Usuario'}
+Historial previo: ${JSON.stringify(historial ? historial.slice(-4) : [])}
+Mensaje actual del usuario: "${mensaje}"`;
+
+        const geminiPromise = this.geminiModel.generateContent(promptChat);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout de 3500ms excedido')), 3500),
+        );
+
+        const resGemini: any = await Promise.race([geminiPromise, timeoutPromise]);
+        const textoGenerado = resGemini.response.text();
+
+        const jsonMatch = textoGenerado.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.pensamiento && parsed.respuesta) {
+            this.logger.log(`✨ [AIDA Gemini 3.5] Respuesta generada: [${parsed.intencion}]`);
+            contexto.ultimaIntencion = parsed.intencion;
+            return parsed;
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`⚡ [AIDA Fallback a motor local]: ${err.message || err}`);
+      }
+    }
+
+    // 4. Retorno del motor cognitivo local
+    this.logger.log(`💭 [AIDA Motor Local] Intención: [${resultadoLocal.intencion}]`);
+    return resultadoLocal as any;
   }
 }
 

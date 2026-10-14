@@ -30,7 +30,7 @@ export default function ProgramarCita() {
   const [panelMismoDia, setPanelMismoDia] = useState(false);
   const [errorValidacion, setErrorValidacion] = useState<string | null>(null);
 
-  const [sugerenciaIA, setSugerenciaIA] = useState<string>("08:00");
+  const [sugerenciaIA, setSugerenciaIA] = useState<string>("07:30");
   const [citaDuplicadaInfo, setCitaDuplicadaInfo] = useState<any>(null);
 
   // Estados del Agente IA Optimizador
@@ -160,7 +160,7 @@ export default function ProgramarCita() {
 
       } catch (error) {
         console.error(error);
-        setHorarioProactivo("08:00");
+        setHorarioProactivo("07:30");
       }
     };
 
@@ -338,8 +338,8 @@ export default function ProgramarCita() {
                   <input type="date" required min={fechaMinima} value={formData.fecha} onChange={(e) => setFormData({ ...formData, fecha: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" />
                 </div>
                 <div>
-                  <label className="block text-slate-400 text-xs mb-2 uppercase tracking-widest">Hora (08:00 a 18:00)</label>
-                  <input type="time" required min="08:00" max="18:00" value={formData.hora} onChange={(e) => setFormData({ ...formData, hora: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" />
+                  <label className="block text-slate-400 text-xs mb-2 uppercase tracking-widest">Hora (07:30 a 18:00)</label>
+                  <input type="time" required min="07:30" max="18:00" value={formData.hora} onChange={(e) => setFormData({ ...formData, hora: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" />
                 </div>
               </div>
               <button type="submit" disabled={isSubmitting} className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 text-slate-900 font-bold py-4 rounded-lg shadow-lg cursor-pointer">

@@ -220,7 +220,7 @@ export default function DashboardPaciente() {
             <div className="mt-auto border-t border-slate-700 pt-4">
               <p className="text-[11px] text-slate-500 uppercase tracking-widest mb-2">Horario de atención</p>
               <p className="text-sm text-slate-300">🕗 Lunes a Viernes</p>
-              <p className="text-sm text-slate-300">08:00 — 18:00 hrs</p>
+              <p className="text-sm text-slate-300">07:30 — 18:00 hrs</p>
             </div>
           </div>
 

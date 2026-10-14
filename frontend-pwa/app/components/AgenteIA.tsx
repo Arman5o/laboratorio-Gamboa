@@ -480,9 +480,9 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       setMood("alert");
       push(
         agente(
-          `⚠️ La hora **${form.hora}** está fuera del horario de atención del laboratorio (**07:30 a 18:00 hrs**).\n\nTe sugiero agendar a las **08:00** o **09:30**. ¿Deseas elegir un horario válido?`,
+          `⚠️ La hora **${form.hora}** está fuera del horario de atención del laboratorio (**07:30 a 18:00 hrs**).\n\nTe sugiero agendar a las **07:30** o **08:00**. ¿Deseas elegir un horario válido?`,
           "opciones",
-          { opciones: ["08:00", "08:30", "09:00", "10:00", "14:00"] }
+          { opciones: ["07:30", "08:00", "08:30", "09:00", "10:00", "14:00"] }
         )
       );
       setFlujo("esperando_hora");
