@@ -476,6 +476,12 @@ function extraerHora(texto: string): string | null {
 
 function esIntencionCita(texto: string, textoFuzzy: string): boolean {
   const t = `${norm(texto)} ${textoFuzzy}`;
+
+  // Si el usuario pregunta por información ("quiero saber", "quisiera consultar", "想了解"), no es intento directo de agendar
+  if (/quiero\s+saber|quisiera\s+saber|deseo\s+saber|quiero\s+consultar|quiero\s+averiguar|想了解|想知道|quiero\s+informacion/i.test(t)) {
+    return false;
+  }
+
   const palabrasCita = [
     'cita', 'turno', 'agendar', 'programar', 'reservar', 'apartar',
     '预约', '挂号', '约时间', '想约',
@@ -486,7 +492,12 @@ function esIntencionCita(texto: string, textoFuzzy: string): boolean {
   }
 
   // Detectar deseo explícito de examen ("quiero un analisis de sangre", "necesito hacerme un pcr", "想做血常规")
-  const verbosDeseo = ['quiero', 'necesito', 'deseo', 'quisiera', 'hacerme', 'tomarme', 'realizarme', 'me gustaria', '想做', '想查', '要验', '要测', 'hacer'];
+  const verbosDeseo = [
+    'quiero un', 'quiero una', 'necesito un', 'necesito una',
+    'deseo hacerme', 'quisiera hacerme', 'hacerme un', 'hacerme una',
+    'tomarme un', 'tomarme una', 'realizarme un', 'realizarme una',
+    'me gustaria hacerme', '想做', '想查', '要验', '要测'
+  ];
   const tieneDeseo = verbosDeseo.some(v => t.includes(v) || texto.includes(v));
   const examenEncontrado = extraerExamen(texto) || extraerExamen(textoFuzzy);
   if (tieneDeseo && examenEncontrado) {
@@ -772,15 +783,34 @@ function manejarFlujoCita(
   contexto: ContextoSesion,
   ahora: Date
 ): ResultadoAgente {
+  // 1. Cancelación de cita si el usuario lo solicita
+  if (/cancelar|olvidalo|ya no|no quiero|cancel|stop/i.test(mensajeOriginal) || /cancelar|olvidalo|ya no/i.test(textoNormalizado)) {
+    contexto.temaActual = undefined;
+    contexto.citaSlots = undefined;
+    return {
+      pensamiento: 'Paso 1 (Comprensión): El usuario solicitó cancelar el proceso de agendamiento. Reinicio los datos temporales.',
+      respuesta: 'He cancelado el proceso de cita sin inconvenientes. ¿En qué otra cosa te puedo orientar hoy? 😊',
+      intencion: 'CANCELAR_CITA'
+    };
+  }
+
+  // 2. Extraer examen, fecha y hora combinando el texto original y el corregido
+  const examen = extraerExamen(mensajeOriginal) || extraerExamen(textoNormalizado);
+  const fecha = extraerFecha(mensajeOriginal, ahora) || extraerFecha(textoNormalizado, ahora);
+  const hora = extraerHora(mensajeOriginal) || extraerHora(textoNormalizado);
+
+  // 3. Si no aportó ningún slot y no tiene intención de cita directa, responder su duda clínica
+  if (!examen && !fecha && !hora && !esIntencionCita(mensajeOriginal, textoNormalizado)) {
+    const respuestaAbierta = manejarConversacionAbierta(mensajeOriginal, textoNormalizado, idioma, correcciones, contexto);
+    if (respuestaAbierta.intencion !== 'CHARLA_LIBRE') {
+      return respuestaAbierta;
+    }
+  }
+
   if (!contexto.citaSlots) contexto.citaSlots = {};
   const slots = contexto.citaSlots;
   contexto.temaActual = 'cita';
   contexto.ultimaIntencion = 'programar_cita';
-
-  // Extraer examen, fecha y hora combinando el texto original y el corregido
-  const examen = extraerExamen(mensajeOriginal) || extraerExamen(textoNormalizado);
-  const fecha = extraerFecha(mensajeOriginal, ahora) || extraerFecha(textoNormalizado, ahora);
-  const hora = extraerHora(mensajeOriginal) || extraerHora(textoNormalizado);
 
   if (examen) slots.examen = examen;
 
