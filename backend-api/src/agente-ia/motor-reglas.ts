@@ -142,7 +142,8 @@ function norm(t: string): string {
   if (!t) return '';
   return t.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[¿¡!?.,;:()_"-]/g, ' ')
+    // Reemplaza signos de puntuación pero conserva ':' y '-' para horas y fechas
+    .replace(/[¿¡!?.,;()_"]/g, ' ')
     // Reduce más de 2 caracteres repetidos: "hooooola" -> "hola"
     .replace(/(.)\1{2,}/g, '$1$1')
     .replace(/\s+/g, ' ')
@@ -417,12 +418,13 @@ function extraerFecha(texto: string, ahora: Date): string | null {
 }
 
 function extraerHora(texto: string): string | null {
-  const t = norm(texto);
+  if (!texto) return null;
   const pad = (n: number) => n.toString().padStart(2, '0');
   const fmt = (h: number, m: number) => `${pad(h)}:${pad(m)}`;
+  const limpio = texto.trim();
 
-  // Formato chino: 上午8点, 下午3点, 8点30, 8点半
-  const matchChino = texto.match(/(上午|下午|早上|晚上)?\s*(\d{1,2})\s*点(?:\s*(半)|(\d{1,2})\s*分?)?/);
+  // 1. Formato chino: 上午8点, 下午3点, 8点30, 8点半
+  const matchChino = limpio.match(/(上午|下午|早上|晚上)?\s*(\d{1,2})\s*点(?:\s*(半)|(\d{1,2})\s*分?)?/);
   if (matchChino) {
     const periodo = matchChino[1];
     let h = parseInt(matchChino[2]);
@@ -434,37 +436,49 @@ function extraerHora(texto: string): string | null {
     return fmt(h, m);
   }
 
-  // "10:30" o "08:00"
-  const matchExacta = t.match(/\b(\d{1,2}):(\d{2})\b/);
+  // 2. Coincidencia directa con dos puntos, punto o 'h' (ej: "07:30", "7:30", "14:00", "07.30", "7h30", "a las 07:30")
+  const matchExacta = limpio.match(/(?:a\s+las?\s+)?\b(\d{1,2})\s*[:.hH]\s*(\d{2})\b/i);
   if (matchExacta) {
     const h = parseInt(matchExacta[1]);
     const m = parseInt(matchExacta[2]);
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return fmt(h, m);
   }
 
-  // "8am" / "3pm"
-  const matchAmPm = t.match(/\b(\d{1,2})\s*(am|pm)\b/);
+  // 3. Formato con AM/PM: "8am", "8:30pm", "3 pm", "7:30 am"
+  const matchAmPm = limpio.match(/\b(\d{1,2})(?:\s*[:.]\s*(\d{2}))?\s*(am|pm)\b/i);
   if (matchAmPm) {
     let h = parseInt(matchAmPm[1]);
-    if (matchAmPm[2] === 'pm' && h < 12) h += 12;
-    if (matchAmPm[2] === 'am' && h === 12) h = 0;
-    return fmt(h, 0);
+    const m = matchAmPm[2] ? parseInt(matchAmPm[2]) : 0;
+    const periodo = matchAmPm[3].toLowerCase();
+    if (periodo === 'pm' && h < 12) h += 12;
+    if (periodo === 'am' && h === 12) h = 0;
+    return fmt(h, m);
   }
 
-  // "a las 10 y media"
+  // 4. "07 30", "7 30" (números separados por espacio)
+  const matchEspacio = limpio.match(/\b(\d{1,2})\s+(\d{2})\b/);
+  if (matchEspacio) {
+    const h = parseInt(matchEspacio[1]);
+    const m = parseInt(matchEspacio[2]);
+    if (h >= 7 && h <= 18 && m >= 0 && m <= 59) return fmt(h, m);
+  }
+
+  const t = norm(limpio);
+
+  // 5. "a las 10 y media"
   const matchYMedia = t.match(/(?:a\s+las?\s+)?(\d{1,2})\s+y\s+media/);
   if (matchYMedia) {
     return fmt(parseInt(matchYMedia[1]), 30);
   }
 
-  // "a las 8" / "las 8"
+  // 6. "a las 8" / "las 8" / "a las 08"
   const matchSimple = t.match(/(?:a\s+)?las?\s+(\d{1,2})\b/);
   if (matchSimple) {
     const h = parseInt(matchSimple[1]);
     if (h >= 7 && h <= 18) return fmt(h, 0);
   }
 
-  // Número solo entre 7 y 18
+  // 7. Número solo entre 7 y 18 (ej: "8", "14")
   const matchSolo = t.match(/^\s*(\d{1,2})\s*$/);
   if (matchSolo) {
     const h = parseInt(matchSolo[1]);
@@ -474,8 +488,24 @@ function extraerHora(texto: string): string | null {
   return null;
 }
 
-function esIntencionCita(texto: string, textoFuzzy: string): boolean {
+function esIntencionCita(texto: string, textoFuzzy: string, contexto?: ContextoSesion): boolean {
   const t = `${norm(texto)} ${textoFuzzy}`;
+
+  // Si el usuario viene de la delimitación médica ("¿Deseas que te ayude a agendar una cita...?")
+  // y responde afirmativamente, activamos de inmediato el flujo de agendamiento
+  if (contexto?.ultimaIntencion === 'DELIMITACION_MEDICA_SINTOMAS') {
+    const afirmativos = [
+      'si', 'claro', 'por favor', 'porfa', 'dale', 'bueno', 'de acuerdo',
+      'ayudame', 'quiero', 'agendar', 'reservar', 'me gustaria',
+      'si quiero', 'si por favor', 'si porfa', 'dale si', 'ok', 'vale',
+      '好的', '可以', '要', '帮我约', '想约', '好', '是',
+      'yes', 'yeah', 'sure', 'please', 'ok', 'book', 'schedule'
+    ];
+    const palabras = t.split(/\s+/);
+    if (afirmativos.some(a => t === a || palabras.includes(a) || t.startsWith(`${a} `))) {
+      return true;
+    }
+  }
 
   // Si el usuario pregunta por información ("quiero saber", "quisiera consultar", "想了解"), no es intento directo de agendar
   if (/quiero\s+saber|quisiera\s+saber|deseo\s+saber|quiero\s+consultar|quiero\s+averiguar|想了解|想知道|quiero\s+informacion/i.test(t)) {
@@ -551,6 +581,53 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
       return {
         razonamiento: `El usuario inició la conversación con un saludo amigable. Me presento como AIDA y ofrezco las opciones principales de atención médica.`,
         respuesta: `¡Hola${saludoNombre}! 👋 Qué gusto saludarte. Soy **AIDA**, la asistente inteligente del **Laboratorio Clínico Gamboa**.\n\n¿En qué te puedo colaborar el día de hoy? Puedo ayudarte a:\n• 🩺 **Agendar una nueva cita** para tus exámenes.\n• 📋 **Consultar preparación y requisitos de ayuno**.\n• 🕐 **Informarte sobre nuestros horarios y ubicación**.\n• 📊 **Guiarte para ver tus resultados clínicos**.`
+      };
+    }
+  },
+
+  // 1.1 DELIMITACIÓN DE ÁREA CLÍNICA: SÍNTOMAS, DOLORES Y CONSULTAS MÉDICAS GENERALES
+  {
+    categoria: 'DELIMITACION_MEDICA_SINTOMAS',
+    palabrasClave: [
+      'duele la barriga', 'dolor de barriga', 'me duele la barriga', 'dolor de estomago', 'me duele el estomago',
+      'dolor de panza', 'me duele la panza', 'dolor de vientre', 'dolor abdominal', 'dolor de cabeza',
+      'me duele la cabeza', 'dolor de espalda', 'dolor en el pecho', 'dolor de garganta', 'dolor de huesos',
+      'me duele', 'tengo dolor', 'siento dolor', 'me arde', 'fiebre', 'calentura', 'nauseas', 'vomito',
+      'vomitar', 'diarrea', 'mareos', 'mareo', 'escalofrios', 'colicos', 'colico', 'gastritis', 'acidez',
+      'me siento mal', 'estoy enfermo', 'estoy enferma', 'malestar', 'que tomo', 'que puedo tomar',
+      'que medicina', 'que pastilla', 'recetame', 'receta para'
+    ],
+    patrones: [
+      /(me\s+duele|dolor\s+(de|en)|tengo\s+dolor|siento\s+dolor|me\s+arde|molestia\s+en)\s+(la\s+|el\s+)?(barriga|estomago|panza|vientre|abdomen|cabeza|espalda|pecho|garganta|cuerpo|rinon|higado|vesicula|huesos|articulaciones)/i,
+      /(me\s+duele\s+(la\s+|el\s+)?\w+)/i,
+      /(tengo|siento)\s+(fiebre|calentura|nauseas|vomito|diarrea|mareo|escalofrios|colicos|gastritis|acidez|reflujo|malestar)/i,
+      /(que\s+tomo|que\s+puedo\s+tomar|que\s+pastilla|que\s+medicamento|receta|recetame|que\s+es\s+bueno\s+para\s+el\s+dolor)/i,
+      /(me\s+siento\s+mal|estoy\s+enferm[oa]|tengo\s+infeccion)/i,
+    ],
+    palabrasChinas: [
+      '肚子疼', '胃痛', '肚子痛', '胃疼', '腹痛', '头痛', '头疼', '发烧', '发热', '恶心', '想吐',
+      '呕吐', '拉肚子', '腹泻', '咳嗽', '喉咙痛', '胸痛', '吃什么药', '吃哪种药', '头晕', '难受', '生病了'
+    ],
+    palabrasIngles: [
+      'stomach pain', 'stomach ache', 'belly hurts', 'my stomach hurts', 'headache', 'fever',
+      'nausea', 'vomit', 'diarrhea', 'sore throat', 'cough', 'chest pain', 'what medicine', 'what pill', 'i feel sick'
+    ],
+    generarRespuesta: (idioma, nombre) => {
+      if (idioma.esChino) {
+        return {
+          razonamiento: `El usuario describe síntomas clínicos o dolor corporal. Como laboratorio de análisis clínicos, AIDA aclara que no realiza consultas ni diagnósticos médicos generales, pero ofrece de inmediato agendar una cita para análisis clínicos de laboratorio que su médico le pueda solicitar.`,
+          respuesta: `我非常理解您的不适，但我需要向您说明：作为**甘博亚临床化验实验室（Lab. Gamboa）**的智能助理，**我并不专门从事临床诊断、综合看诊或开具药物处方**，因为我们的专业范畴是医学化验与生物样本分析。🩺\n\n建议您尽快前往医院或诊所，由全科医生或专科医生（如消化内科医生）进行详细的体检诊断。\n\n🔬 不过，如果医生为您开具了化验单，或者您需要进行化验检查（例如血常规、尿常规等）来辅助查找病因，**我很乐意现在就帮您在实验室预约一个化验名额**。\n\n您需要我帮您预约化验检查吗？`
+        };
+      }
+      if (idioma.esIngles && !idioma.esEspanol) {
+        return {
+          razonamiento: `User describes physical pain or symptoms. Explaining scope boundary (clinical lab only, no diagnosis/prescriptions) and offering to book lab tests.`,
+          respuesta: `I understand you are feeling unwell, but please note: as the AI assistant for **Gamboa Clinical Laboratory**, **I am not specialized in clinical diagnosis, medical consultations, or prescribing medications**, as our scope is exclusively clinical laboratory analysis. 🩺\n\nI recommend consulting a physician or specialist for a proper medical examination.\n\n🔬 However, if your doctor orders or you need clinical lab tests (such as a complete blood count or urine test) to evaluate your health, **I would be glad to help you schedule your lab appointment right now**.\n\nWould you like me to help you schedule an appointment for a lab test?`
+        };
+      }
+      return {
+        razonamiento: `El paciente describe una dolencia o síntoma físico (ej. dolor de barriga o malestar). Al ser AIDA asistente de un laboratorio de análisis clínico, delimito el alcance profesional aclarando que no emito diagnósticos médicos ni receto medicamentos, y ofrezco de inmediato agendar una cita para análisis clínicos que su médico le solicite para investigar la causa.`,
+        respuesta: `Comprendo tu molestia${nombre ? `, ${nombre}` : ''}, pero es importante aclararte que como asistente virtual del **Laboratorio Clínico Gamboa**, **no estoy especializada en esa rama (consultas médicas generales, diagnósticos clínicos ni en recetar medicamentos)**, ya que nuestra especialidad exclusiva es la realización y procesamiento de análisis clínicos de laboratorio. 🩺\n\nTe sugiero acudir a una consulta con un médico o especialista para que examine tu caso particular y determine la causa exacta de tu molestia.\n\n🔬 Sin embargo, si tu médico te solicita o necesitas realizarte análisis de laboratorio (como un análisis de sangre, biometría hemática o análisis de orina) para investigar tu estado de salud, **con mucho gusto puedo ayudarte a programar o reservar tu cita en nuestro laboratorio ahora mismo**.\n\n¿Deseas que te ayude a agendar una cita en el laboratorio para alguno de estos análisis?`
       };
     }
   },
@@ -696,13 +773,13 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     }
   },
 
-  // 9. DUDAS MÉDICAS FRECUENTES (AGUA, MEDICINAS, DOLOR, EMBARAZO)
+  // 9. DUDAS MÉDICAS FRECUENTES (AGUA, MEDICINAS DE PRESIÓN, DOLOR DE AGUJA, EMBARAZO)
   {
     categoria: 'DUDAS_FRECUENTES',
-    palabrasClave: ['puedo tomar agua', 'tomar agua', 'beber agua', 'medicamento', 'pastilla', 'duele', 'niño', 'embarazo', 'alcohol', 'fumar'],
-    patrones: [/(puedo tomar agua|beber agua|medicinas|pastillas|duele|miedo|alcohol|fumar|cafe)/],
-    palabrasChinas: ['能喝水吗', '吃药', '疼不疼', '能抽烟吗', '能喝酒吗', '空腹喝水'],
-    palabrasIngles: ['can i drink water', 'medicine', 'does it hurt', 'can i smoke', 'alcohol', 'coffee'],
+    palabrasClave: ['puedo tomar agua', 'tomar agua', 'beber agua', 'medicamento de presion', 'pastilla de presion', 'duele la aguja', 'duele el pinchazo', 'duele sacarse sangre', 'miedo a las agujas', 'niño', 'embarazo', 'alcohol en ayunas', 'fumar en ayunas'],
+    patrones: [/(puedo tomar agua|beber agua|medicamentos? (diarios|de la presion)|duele la aguja|duele el pinchazo|miedo a las agujas|alcohol|fumar|cafe)/i],
+    palabrasChinas: ['能喝水吗', '吃降压药', '针疼不疼', '能抽烟吗', '能喝酒吗', '空腹喝水'],
+    palabrasIngles: ['can i drink water', 'daily medicine', 'does the needle hurt', 'can i smoke', 'alcohol', 'coffee'],
     generarRespuesta: (idioma) => {
       return {
         razonamiento: `El usuario pregunta por dudas clínicas cotidianas (agua en ayuno, dolor, medicamentos o hábitos). Proporciono una orientación médica clara, tranquilizadora y profesional.`,
@@ -763,7 +840,7 @@ export function procesarConMotorDeReglas(
 
   // 2. ¿Estamos en flujo de cita o el usuario quiere una cita?
   const enFlujoCita = contexto.temaActual === 'cita';
-  const intentaCita = esIntencionCita(mensaje, textoNormalizado);
+  const intentaCita = esIntencionCita(mensaje, textoNormalizado, contexto);
 
   if (enFlujoCita || intentaCita) {
     return manejarFlujoCita(mensaje, textoNormalizado, idioma, correcciones, contexto, ahora);
@@ -800,7 +877,7 @@ function manejarFlujoCita(
   const hora = extraerHora(mensajeOriginal) || extraerHora(textoNormalizado);
 
   // 3. Si no aportó ningún slot y no tiene intención de cita directa, responder su duda clínica
-  if (!examen && !fecha && !hora && !esIntencionCita(mensajeOriginal, textoNormalizado)) {
+  if (!examen && !fecha && !hora && !esIntencionCita(mensajeOriginal, textoNormalizado, contexto)) {
     const respuestaAbierta = manejarConversacionAbierta(mensajeOriginal, textoNormalizado, idioma, correcciones, contexto);
     if (respuestaAbierta.intencion !== 'CHARLA_LIBRE') {
       return respuestaAbierta;
@@ -972,6 +1049,11 @@ function manejarConversacionAbierta(
       if (numPalabras > 2) {
         puntaje = Math.min(puntaje, 5); // Permite que preguntas específicas ganen
       }
+    }
+
+    // Prioridad alta a la delimitación de síntomas sobre charla libre o saludos
+    if (regla.categoria === 'DELIMITACION_MEDICA_SINTOMAS' && puntaje > 0) {
+      puntaje += 25; // Asegura que gane inmediatamente si el paciente describe dolor o malestar
     }
 
     if (puntaje > maxPuntaje) {

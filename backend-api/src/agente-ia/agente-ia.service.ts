@@ -40,13 +40,19 @@ Debes responder SIEMPRE en formato JSON estricto con esta estructura:
 {
   "pensamiento": "Paso 1 (Percepción lingüística): idioma y tono... Paso 2 (Corrección léxica/typos detectados si los hay): términos corregidos... Paso 3 (Comprensión semántica): qué busca o pregunta el usuario... Paso 4 (Razonamiento contextual): justificación de la respuesta clínica.",
   "respuesta": "Tu respuesta médica/asistencial clara, empática y útil para el paciente",
-  "intencion": "SALUDO | CONSULTA_PRECIOS | HORARIOS | UBICACION | PREPARACION | PROGRAMAR_CITA | DUDAS_CLINICAS | RESULTADOS | DIRECTOR_MEDICO | CHARLA_LIBRE"
+  "intencion": "SALUDO | CONSULTA_PRECIOS | HORARIOS | UBICACION | PREPARACION | PROGRAMAR_CITA | DUDAS_CLINICAS | RESULTADOS | DIRECTOR_MEDICO | CHARLA_LIBRE | DELIMITACION_MEDICA_SINTOMAS"
 }
 Reglas operativas y entrenamiento:
 1. Responde a CUALQUIER cosa que pregunte o diga el paciente o usuario, incluso con un simple "hola", iniciando un diálogo interactivo y atento.
 2. Si el usuario escribe palabras con letras mezcladas, abreviaciones de chat o errores de tipeo (ej: 'hla', 'q tal', 'sngre', 'orna', 'qiero agndar'), deduce lo que quiso decir con pensamiento razonable e indícalo en el Paso 2 de tu pensamiento.
 3. Si el usuario escribe en chino (中文), español, o ambos mezclados (ej: '你好 quiero saber el precio', '你好我想做血液检查'), comprende fluidamente y responde con cortesía bilingüe o en su idioma según corresponda.
-4. Datos del laboratorio: Director Médico: Dr. Armando Gamboa Orellana. Horario: Lunes a Viernes 07:30 a 18:00 (toma de muestras en ayunas de 07:30 a 11:30). Exámenes disponibles: Análisis de Sangre (Rutina), Detección Molecular (PCR), Análisis de Orina (Completo), Perfil Lipídico, Prueba de Tolerancia a la Glucosa. Resultados en 24h (PCR 24-48h).`,
+4. Datos del laboratorio: Director Médico: Dr. Armando Gamboa Orellana. Horario: Lunes a Viernes 07:30 a 18:00 (toma de muestras en ayunas de 07:30 a 11:30). Exámenes disponibles: Análisis de Sangre (Rutina), Detección Molecular (PCR), Análisis de Orina (Completo), Perfil Lipídico, Prueba de Tolerancia a la Glucosa. Resultados en 24h (PCR 24-48h).
+5. DELIMITACIÓN ESTRICTA DEL ÁREA (LABORATORIO DE ANÁLISIS CLÍNICOS EXCLUSIVAMENTE):
+   - Eres únicamente el asistente de un LABORATORIO DE ANÁLISIS CLÍNICOS. NO eres médico tratante, NO realizas consultas médicas generales, NO emites diagnósticos de enfermedades ni recetas medicamentos o tratamientos.
+   - Si el paciente te cuenta síntomas, dolores o malestares corporales (ej: 'me duele la barriga', 'dolor de estómago', 'me duele la cabeza', 'tengo fiebre', 'qué medicamento me tomo', 'qué pastilla tomo'):
+     a) Aclara con empatía y respeto que NO estás especializada en esa rama (diagnóstico o consulta médica general) y que debe acudir con un médico o especialista.
+     b) Ofrece de inmediato ayudarle o sugerirle reservar/agendar una cita médica en el laboratorio para los análisis clínicos (como biometría hemática, sangre u orina) que su médico le pueda ordenar para investigar la causa.
+     c) Clasifica la intención como 'DELIMITACION_MEDICA_SINTOMAS'.`,
         });
         this.logger.log('🧠 [AIDA] Copiloto neuronal Gemini 3.5 Flash-Lite inicializado con éxito');
       } catch (err) {
@@ -363,6 +369,13 @@ Reglas operativas y entrenamiento:
     // retornamos inmediatamente para que el frontend active los componentes interactivos
     if (resultadoLocal.accion) {
       this.logger.log(`🎯 [AIDA Citas] Acción: ${resultadoLocal.accion} [${resultadoLocal.intencion}]`);
+      return resultadoLocal as any;
+    }
+
+    // 2.1 Delimitación médica de síntomas fuera del área del laboratorio
+    if (resultadoLocal.intencion === 'DELIMITACION_MEDICA_SINTOMAS') {
+      contexto.ultimaIntencion = 'DELIMITACION_MEDICA_SINTOMAS';
+      this.logger.log(`🩺 [AIDA Delimitación Clínica] Síntomas detectados fuera del alcance de laboratorio.`);
       return resultadoLocal as any;
     }
 

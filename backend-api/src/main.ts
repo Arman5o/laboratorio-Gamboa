@@ -8,8 +8,12 @@ import * as bodyParser from 'body-parser';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Habilitamos CORS para que el frontend pueda conectarse desde cualquier origen
-  app.enableCors({ origin: '*' });
+  // Habilitamos CORS robusto para que el frontend pueda conectarse desde cualquier origen (localhost, 127.0.0.1, red local)
+  app.enableCors({
+    origin: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
 
   // Aumentamos el límite a 50 Megabytes para poder recibir los PDFs en Base64
   app.use(bodyParser.json({ limit: '50mb' }));
