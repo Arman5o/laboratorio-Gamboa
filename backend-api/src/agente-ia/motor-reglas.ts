@@ -37,6 +37,7 @@ export interface ResultadoAgente {
   accion?: 'PEDIR_EXAMEN' | 'PEDIR_FECHA' | 'PEDIR_HORA' | 'CONFIRMAR_CITA';
   citaSlots?: CitaSlots;
   opcionesExamen?: string[];
+  opciones?: string[];
 }
 
 export const EXAMENES_OFICIALES = [
@@ -491,9 +492,9 @@ function extraerHora(texto: string): string | null {
 function esIntencionCita(texto: string, textoFuzzy: string, contexto?: ContextoSesion): boolean {
   const t = `${norm(texto)} ${textoFuzzy}`;
 
-  // Si el usuario viene de la delimitación médica ("¿Deseas que te ayude a agendar una cita...?")
+  // Si el usuario viene de la delimitación médica o consulta externa
   // y responde afirmativamente, activamos de inmediato el flujo de agendamiento
-  if (contexto?.ultimaIntencion === 'DELIMITACION_MEDICA_SINTOMAS') {
+  if (contexto?.ultimaIntencion === 'DELIMITACION_MEDICA_SINTOMAS' || contexto?.ultimaIntencion === 'CONSULTA_EXTERNA_NO_CLINICA') {
     const afirmativos = [
       'si', 'claro', 'por favor', 'porfa', 'dale', 'bueno', 'de acuerdo',
       'ayudame', 'quiero', 'agendar', 'reservar', 'me gustaria',
@@ -547,13 +548,24 @@ function formatearFechaLegible(fecha: string): string {
 
 // ─── BASE DE CONOCIMIENTO Y REGLAS DE RESPUESTA INTELIGENTE ────────
 
+function elegirVariacion(opciones: string[]): string {
+  const idx = Math.floor(Math.random() * opciones.length);
+  return opciones[idx];
+}
+
 interface ReglaInteligente {
   categoria: string;
   palabrasClave: string[];
   patrones: RegExp[];
   palabrasChinas: string[];
   palabrasIngles: string[];
-  generarRespuesta: (idioma: ReturnType<typeof detectarIdioma>, nombre?: string) => { respuesta: string, razonamiento: string };
+  generarRespuesta: (idioma: ReturnType<typeof detectarIdioma>, nombre?: string) => {
+    respuesta: string;
+    razonamiento: string;
+    accion?: 'PEDIR_EXAMEN' | 'PEDIR_FECHA' | 'PEDIR_HORA' | 'CONFIRMAR_CITA';
+    opcionesExamen?: string[];
+    opciones?: string[];
+  };
 }
 
 const REGLAS_CLINICAS: ReglaInteligente[] = [
@@ -568,19 +580,24 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
       const saludoNombre = nombre ? ` ${nombre}` : '';
       if (idioma.esChino) {
         return {
-          razonamiento: `El paciente envía un saludo en idioma chino/mixto. Respondo con cortesía bilingüe presentándome como AIDA del Laboratorio Gamboa.`,
-          respuesta: `您好！👋 我是甘博亚实验室（Lab. Gamboa）的智能医疗助理 **AIDA**。\n\n¡Hola${saludoNombre}! Soy **AIDA**, asistente virtual del Laboratorio Clínico Gamboa.\n\n我可以帮您预约检查、查询注意事项、营业时间或化验报告。\n¿En qué te puedo ayudar hoy? (Agendar citas, preparación para exámenes, horarios o resultados).`
+          razonamiento: `Saludo en chino. Respuesta breve y cortés.`,
+          respuesta: `您好${saludoNombre}！👋 我是甘博亚实验室的助理 **AIDA**。请问需要帮您预约化验、查询营业时间还是查看报告？`
         };
       }
       if (idioma.esIngles && !idioma.esEspanol) {
         return {
-          razonamiento: `The user greets in English. Responding cordially as AIDA from Lab Gamboa with English/Spanish assistance.`,
-          respuesta: `Hello${saludoNombre}! 👋 I'm **AIDA**, your AI clinical assistant at Lab. Gamboa.\n\nHow can I assist you today? You can ask me to schedule an appointment, check lab hours, exam prep guidelines, or lab results!`
+          razonamiento: `English greeting. Short and direct assistance offer.`,
+          respuesta: `Hello${saludoNombre}! 👋 I'm **AIDA** from Lab. Gamboa. How can I help you today? I can schedule tests, check hours, or review your results.`
         };
       }
+      const opciones = [
+        `¡Hola${saludoNombre}! 👋 Soy **AIDA**, asistente del **Laboratorio Gamboa**. ¿En qué te ayudo hoy? Puedo agendar tu cita o consultar exámenes y horarios.`,
+        `¡Hola${saludoNombre}! Qué gusto saludarte. 😊 Estoy lista para ayudarte con tus análisis de laboratorio o agendar tu cita. ¿Qué necesitas?`,
+        `¡Buen día${saludoNombre}! 👋 Aquí AIDA del Lab. Gamboa. ¿Deseas agendar una cita o consultar sobre algún examen de laboratorio?`
+      ];
       return {
-        razonamiento: `El usuario inició la conversación con un saludo amigable. Me presento como AIDA y ofrezco las opciones principales de atención médica.`,
-        respuesta: `¡Hola${saludoNombre}! 👋 Qué gusto saludarte. Soy **AIDA**, la asistente inteligente del **Laboratorio Clínico Gamboa**.\n\n¿En qué te puedo colaborar el día de hoy? Puedo ayudarte a:\n• 🩺 **Agendar una nueva cita** para tus exámenes.\n• 📋 **Consultar preparación y requisitos de ayuno**.\n• 🕐 **Informarte sobre nuestros horarios y ubicación**.\n• 📊 **Guiarte para ver tus resultados clínicos**.`
+        razonamiento: `Saludo breve, amigable y directo sin textos largos.`,
+        respuesta: elegirVariacion(opciones)
       };
     }
   },
@@ -595,13 +612,13 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
       'me duele', 'tengo dolor', 'siento dolor', 'me arde', 'fiebre', 'calentura', 'nauseas', 'vomito',
       'vomitar', 'diarrea', 'mareos', 'mareo', 'escalofrios', 'colicos', 'colico', 'gastritis', 'acidez',
       'me siento mal', 'estoy enfermo', 'estoy enferma', 'malestar', 'que tomo', 'que puedo tomar',
-      'que medicina', 'que pastilla', 'recetame', 'receta para'
+      'que medicina', 'que pastilla', 'recetame un medicamento', 'remedio para el dolor'
     ],
     patrones: [
       /(me\s+duele|dolor\s+(de|en)|tengo\s+dolor|siento\s+dolor|me\s+arde|molestia\s+en)\s+(la\s+|el\s+)?(barriga|estomago|panza|vientre|abdomen|cabeza|espalda|pecho|garganta|cuerpo|rinon|higado|vesicula|huesos|articulaciones)/i,
       /(me\s+duele\s+(la\s+|el\s+)?\w+)/i,
       /(tengo|siento)\s+(fiebre|calentura|nauseas|vomito|diarrea|mareo|escalofrios|colicos|gastritis|acidez|reflujo|malestar)/i,
-      /(que\s+tomo|que\s+puedo\s+tomar|que\s+pastilla|que\s+medicamento|receta|recetame|que\s+es\s+bueno\s+para\s+el\s+dolor)/i,
+      /(que\s+tomo|que\s+puedo\s+tomar|que\s+pastilla|que\s+medicamento|receta\s+medica|recetame|remedio\s+para\s+el\s+dolor|que\s+es\s+bueno\s+para\s+el\s+dolor)/i,
       /(me\s+siento\s+mal|estoy\s+enferm[oa]|tengo\s+infeccion)/i,
     ],
     palabrasChinas: [
@@ -615,19 +632,125 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma, nombre) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `El usuario describe síntomas clínicos o dolor corporal. Como laboratorio de análisis clínicos, AIDA aclara que no realiza consultas ni diagnósticos médicos generales, pero ofrece de inmediato agendar una cita para análisis clínicos de laboratorio que su médico le pueda solicitar.`,
-          respuesta: `我非常理解您的不适，但我需要向您说明：作为**甘博亚临床化验实验室（Lab. Gamboa）**的智能助理，**我并不专门从事临床诊断、综合看诊或开具药物处方**，因为我们的专业范畴是医学化验与生物样本分析。🩺\n\n建议您尽快前往医院或诊所，由全科医生或专科医生（如消化内科医生）进行详细的体检诊断。\n\n🔬 不过，如果医生为您开具了化验单，或者您需要进行化验检查（例如血常规、尿常规等）来辅助查找病因，**我很乐意现在就帮您在实验室预约一个化验名额**。\n\n您需要我帮您预约化验检查吗？`
+          razonamiento: `Aclaración concisa de especialidad exclusiva en análisis de laboratorio.`,
+          respuesta: `我并不专门从事看诊或开药，因为我们是专业的临床检验实验室。🩺 建议您咨询专科医生；若您需要做血常规或尿检等化验，我很乐意为您预约时间。需要帮您挂号吗？`
         };
       }
       if (idioma.esIngles && !idioma.esEspanol) {
         return {
-          razonamiento: `User describes physical pain or symptoms. Explaining scope boundary (clinical lab only, no diagnosis/prescriptions) and offering to book lab tests.`,
-          respuesta: `I understand you are feeling unwell, but please note: as the AI assistant for **Gamboa Clinical Laboratory**, **I am not specialized in clinical diagnosis, medical consultations, or prescribing medications**, as our scope is exclusively clinical laboratory analysis. 🩺\n\nI recommend consulting a physician or specialist for a proper medical examination.\n\n🔬 However, if your doctor orders or you need clinical lab tests (such as a complete blood count or urine test) to evaluate your health, **I would be glad to help you schedule your lab appointment right now**.\n\nWould you like me to help you schedule an appointment for a lab test?`
+          razonamiento: `Brief scope boundary and lab appointment offer.`,
+          respuesta: `I'm not specialized in medical diagnoses or prescribing medicines since we are strictly a clinical lab. 🩺 I suggest seeing a doctor, but if you need lab tests (like blood or urine), I'd be glad to schedule an appointment. Would you like to book one?`
         };
       }
+      const opciones = [
+        `No me especializo en esa rama médica (diagnósticos ni recetar medicamentos), ya que somos un laboratorio de análisis clínicos. 🩺 Te sugiero consultar con un médico; si necesitas análisis de sangre u orina para tu evaluación, con gusto te programo una cita. ¿Deseas agendarla?`,
+        `No me especializo en esa área médica para diagnosticarte o indicarte medicación. 🩺 Te recomiendo acudir con un médico o especialista. Si requieres análisis de laboratorio de apoyo, con gusto te ayudo a agendar tu cita. ¿Te gustaría programarla?`,
+        `Como asistente de laboratorio clínico, no estoy facultada para consultas médicas generales ni tratamientos. 🩺 Te aconsejo ver a un médico, pero si te solicita exámenes de laboratorio, puedo reservarte un turno de inmediato. ¿Deseas agendar tu cita?`
+      ];
       return {
-        razonamiento: `El paciente describe una dolencia o síntoma físico (ej. dolor de barriga o malestar). Al ser AIDA asistente de un laboratorio de análisis clínico, delimito el alcance profesional aclarando que no emito diagnósticos médicos ni receto medicamentos, y ofrezco de inmediato agendar una cita para análisis clínicos que su médico le solicite para investigar la causa.`,
-        respuesta: `Comprendo tu molestia${nombre ? `, ${nombre}` : ''}, pero es importante aclararte que como asistente virtual del **Laboratorio Clínico Gamboa**, **no estoy especializada en esa rama (consultas médicas generales, diagnósticos clínicos ni en recetar medicamentos)**, ya que nuestra especialidad exclusiva es la realización y procesamiento de análisis clínicos de laboratorio. 🩺\n\nTe sugiero acudir a una consulta con un médico o especialista para que examine tu caso particular y determine la causa exacta de tu molestia.\n\n🔬 Sin embargo, si tu médico te solicita o necesitas realizarte análisis de laboratorio (como un análisis de sangre, biometría hemática o análisis de orina) para investigar tu estado de salud, **con mucho gusto puedo ayudarte a programar o reservar tu cita en nuestro laboratorio ahora mismo**.\n\n¿Deseas que te ayude a agendar una cita en el laboratorio para alguno de estos análisis?`
+        razonamiento: `Aclaración breve de especialidad de laboratorio y propuesta directa de reserva.`,
+        respuesta: elegirVariacion(opciones),
+        opciones: ['📅 Sí, agendar cita', '🧪 Ver exámenes disponibles', '⏰ Horarios de atención']
+      };
+    }
+  },
+
+  // 1.2 CONSULTAS EXTERNAS NO CLÍNICAS (RECETAS DE COCINA, CULTURA GENERAL, TAREAS, JUEGOS)
+  {
+    categoria: 'CONSULTA_EXTERNA_NO_CLINICA',
+    palabrasClave: [
+      'receta', 'recetas', 'receta de pan', 'receta de cocina', 'receta de comida', 'receta de pastel', 'receta de torta',
+      'como cocinar', 'como hacer pan', 'como preparar', 'como hacer comida', 'ingredientes', 'ingredientes para',
+      'chiste', 'cuento', 'tarea', 'futbol', 'cancion', 'musica', 'pelicula', 'clima', 'tiempo de manana', 'capital de',
+      'poema', 'videojuego', 'historia', 'noticias', 'programacion', 'matematicas', 'chistes'
+    ],
+    patrones: [
+      /\breceta(s)?\b(?!\s+(medica|médica))/i,
+      /(como\s+(hacer|cocinar|preparar|elaborar)\s+)/i,
+      /(ingredientes\s+(de|para)\s+)/i,
+      /(cuentame\s+(un\s+)?(chiste|cuento|historia)|dime\s+(un\s+)?(chiste|poema|cancion)|cual\s+es\s+la\s+capital|quien\s+(es|fue|gano)|clima\s+en|como\s+reparar)/i
+    ],
+    palabrasChinas: ['菜谱', '做饭', '面包做法', '食谱', '做面包', '笑话', '讲个笑话', '天气'],
+    palabrasIngles: ['recipe', 'how to cook', 'bread recipe', 'cake recipe', 'joke', 'weather', 'movie'],
+    generarRespuesta: (idioma, nombre) => {
+      if (idioma.esChino) {
+        return {
+          razonamiento: `Consulta externa ajena a la salud. Respuesta exacta y cordial orientando a análisis clínicos.`,
+          respuesta: `抱歉，我无法为您提供该信息。作为甘博亚实验室的助理，我可以帮您预约化验时间或查询检查项目。请问需要帮您预约检查吗？`,
+          opciones: ['📅 预约化验', '⏰ 营业时间', '🧪 检查项目']
+        };
+      }
+      if (idioma.esIngles && !idioma.esEspanol) {
+        return {
+          razonamiento: `External out-of-scope question. Clear and polite lab scope clarification.`,
+          respuesta: `I'm sorry, I cannot help with that information. As a Gamboa Laboratory assistant, I can help you schedule a lab test appointment or provide info on our tests. Would you like to schedule one?`,
+          opciones: ['📅 Book appointment', '⏰ Opening hours', '🧪 Available tests']
+        };
+      }
+      const opcionesVariadas = [
+        `Lo siento, no te puedo ayudar con esos datos. Como agente de Laboratorio Gamboa puedo ayudarte a registrar una cita para un análisis clínico o brindarte información sobre nuestros exámenes.`,
+        `Esa consulta queda fuera de mi área de especialidad. Como asistente de Laboratorio Gamboa puedo ayudarte a programar tus análisis clínicos o consultar nuestros estudios disponibles.`,
+        `Disculpa, no dispongo de esa información ya que me enfoco exclusivamente en análisis de laboratorio. Con gusto te asisto para agendar tu cita médica.`
+      ];
+      return {
+        razonamiento: `El usuario pregunta por un tema ajeno al laboratorio (ej. recetas de cocina, cultura general). Respondo exactamente indicando que no poseo esos datos y orientando a citas de análisis clínicos con opciones interactivas.`,
+        respuesta: elegirVariacion(opcionesVariadas),
+        opciones: ['📅 Programar cita', '⏰ Horarios de atención', '🧪 Exámenes disponibles']
+      };
+    }
+  },
+
+  // 1.3 ORIENTACIÓN SOBRE DIAGNÓSTICOS Y RECOMENDACIÓN DE EXÁMENES CLÍNICOS
+  {
+    categoria: 'ORIENTACION_DIAGNOSTICOS_EXAMENES',
+    palabrasClave: [
+      'diagnosticos', 'diagnostico', 'que diagnosticos debo hacerme', 'que diagnostico debo hacerme',
+      'que diagnostico me hago', 'que diagnosticos me hago', 'que diagnosticos tienen',
+      'que examen debo hacerme', 'que examen me hago', 'que examenes me hago', 'que analisis debo hacerme',
+      'que analisis me hago', 'que examen me recomiendas', 'que analisis me recomiendas',
+      'que estudio me recomiendas', 'que examen me sirve', 'que analisis me sirve',
+      'que chequeo hacerme', 'que pruebas tienen', 'cuales analisis tienen', 'cuales examenes tienen',
+      'que analisis realizan', 'que estudios realizan', 'que prueba me hago', 'hacerme un chequeo',
+      'que examen hacerme', 'que analisis hacerme', 'que estudio hacerme', 'que chequeo me hago'
+    ],
+    patrones: [
+      /(que|cuales)\s+(diagnostico|diagnosticos|examen|examenes|analisis|estudios?|pruebas?)\s+(debo|puedo|me\s+recomiendas?|me\s+hago|hacerme|tienen|realizan)/i,
+      /(recomiendas?|sugieres?)\s+(algun|que)?\s*(examen|analisis|estudio|diagnostico|chequeo)/i,
+      /(que\s+me\s+recomiendas\s+hacerme|que\s+me\s+hago|que\s+analisis\s+hay|que\s+pruebas\s+hacen)/i,
+      /(que\s+diagnosticos?\s+debo\s+hacerme)/i
+    ],
+    palabrasChinas: ['做什么检查', '做哪种检查', '做什么化验', '推荐化验', '有什么检查项目', '诊断'],
+    palabrasIngles: ['what tests should i take', 'what diagnostic', 'which tests', 'recommended tests'],
+    generarRespuesta: (idioma, nombre) => {
+      if (idioma.esChino) {
+        return {
+          razonamiento: `Orientación sobre diagnósticos clínicos y exámenes disponibles.`,
+          respuesta: `具体的医学诊断须由医生确定。甘博亚实验室为您提供常规血检、尿检、血脂及血糖等预防性化验。您想预约哪一项检查？`,
+          accion: 'PEDIR_EXAMEN',
+          opcionesExamen: EXAMENES_OFICIALES,
+          opciones: EXAMENES_OFICIALES,
+        };
+      }
+      if (idioma.esIngles && !idioma.esEspanol) {
+        return {
+          razonamiento: `Diagnostic guidance and preventive lab test options.`,
+          respuesta: `A definitive medical diagnosis requires a doctor's evaluation. At Gamboa Lab, we offer routine preventive tests (blood, urine, lipid profile, glucose). Which one would you like to schedule?`,
+          accion: 'PEDIR_EXAMEN',
+          opcionesExamen: EXAMENES_OFICIALES,
+          opciones: EXAMENES_OFICIALES,
+        };
+      }
+      const opciones = [
+        `El diagnóstico exacto lo determina tu médico tratante. En **Laboratorio Gamboa** disponemos de chequeos preventivos de rutina como sangre, orina, glucosa y perfil lipídico. ¿Cuál te gustaría agendar?`,
+        `Para saber qué estudio específico requieres es aconsejable una orden médica. Sin embargo, para control general te sugerimos nuestros perfiles preventivos más solicitados. ¿Deseas programar tu cita para alguno?`,
+        `No emitimos diagnósticos médicos directos, pero ponemos a tu disposición nuestros análisis clínicos de rutina para tu chequeo preventivo de salud. ¿Te gustaría agendar un turno?`
+      ];
+      return {
+        razonamiento: `Orientación interactiva sobre diagnósticos: aclaración de rol de laboratorio y presentación directa de exámenes preventivos.`,
+        respuesta: elegirVariacion(opciones),
+        accion: 'PEDIR_EXAMEN',
+        opcionesExamen: EXAMENES_OFICIALES,
+        opciones: EXAMENES_OFICIALES,
       };
     }
   },
@@ -642,13 +765,18 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma, nombre) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `El usuario pregunta por mi estado en chino/mixto. Respondo amablemente y pregunto por su salud.`,
-          respuesta: `我很好，谢谢您的关心！😊 我时刻准备好为您提供最优质的实验室服务。\n\n¡Muy bien, gracias por preguntar! Siempre lista y atenta para ayudarte con tus análisis clínicos en el Lab. Gamboa. ¿Qué consulta o examen tienes en mente?`
+          razonamiento: `Consulta de estado en chino.`,
+          respuesta: `我很好，谢谢关心！😊 随时为您服务。请问今天需要咨询哪项检查或预约？`
         };
       }
+      const opciones = [
+        `¡Muy bien, gracias por preguntar${nombre ? `, ${nombre}` : ''}! 😊 Lista para ayudarte con tus análisis clínicos o citas. ¿Qué necesitas hoy?`,
+        `¡Excelente! Con toda la energía para atenderte en el **Laboratorio Gamboa**. ¿Tienes alguna consulta sobre tus exámenes?`,
+        `¡Todo muy bien! 😊 Aquí atenta para ayudarte a agendar o resolver tus dudas del laboratorio. ¿En qué te colaboro?`
+      ];
       return {
-        razonamiento: `El usuario consulta por mi estado. Respondo con calidez humana y empatía profesional, invitándolo a consultar su salud.`,
-        respuesta: `¡Excelente, gracias por preguntar${nombre ? `, ${nombre}` : ''}! 😊 Estoy activa y con toda la energía para ayudarte a cuidar tu salud en el **Laboratorio Gamboa**.\n\n¿Cómo te encuentras tú? ¿Hay algún análisis o consulta que desees resolver hoy?`
+        razonamiento: `Respuesta cordial, breve y enfocada.`,
+        respuesta: elegirVariacion(opciones)
       };
     }
   },
@@ -663,13 +791,17 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `El usuario pregunta por mi identidad en chino/mixto. Explico mis funciones clínicas en Lab Gamboa.`,
-          respuesta: `我是 **AIDA**（智能医疗助理），甘博亚实验室的专属AI。👨‍⚕️🔬\n\n我的核心能力包括：\n1. 📅 自动为您智能安排化验时间。\n2. 🩸 详细告知抽血、验尿、PCR等检查的空腹与禁忌。\n3. 📊 协助查询检测报告与状态。\n\nSoy **AIDA**, la inteligencia artificial médica del Laboratorio Gamboa. ¡Dime qué necesitas y te ayudo de inmediato!`
+          razonamiento: `Identidad en chino.`,
+          respuesta: `我是 **AIDA**，甘博亚实验室的AI助手。我协助您智能预约化验、了解检查禁忌并查看检验结果。🔬`
         };
       }
+      const opciones = [
+        `Soy **AIDA**, la asistente inteligente del **Laboratorio Clínico Gamboa**. Te ayudo a agendar citas, verificar requisitos de ayuno y consultar tus resultados. 🩺`,
+        `Soy **AIDA**, asistente virtual supervisada por el **Dr. Armando Gamboa Orellana**. Mi función es guiarte en tus análisis clínicos y reservar tus turnos en segundos. 🔬`
+      ];
       return {
-        razonamiento: `El paciente pregunta por mi identidad y funciones. Detallo mis capacidades clínicas y apoyo al Dr. Armando Gamboa.`,
-        respuesta: `Soy **AIDA** (Asistente Inteligente de Diagnóstico y Agenda) del **Laboratorio Gamboa**, dirigida bajo la supervisión médica del **Dr. Armando Gamboa Orellana** 👨‍⚕️.\n\nEstoy capacitada para:\n1. 🩺 **Agendar citas automáticamente** analizando horarios y protocolos de ayuno.\n2. 🩸 **Explicarte la preparación exacta** para sangre, orina, PCR, lípidos y glucosa.\n3. 🔍 **Comprender tus mensajes** incluso si escribes rápido, con errores de tipeo o en otros idiomas como chino o inglés.\n4. 📊 **Guiarte en la entrega y descarga** de tus resultados clínicos en PDF.`
+        razonamiento: `Identidad explicada en 2 oraciones concisas.`,
+        respuesta: elegirVariacion(opciones)
       };
     }
   },
@@ -683,8 +815,8 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     palabrasIngles: ['doctor', 'dr gamboa', 'who is the doctor'],
     generarRespuesta: (idioma) => {
       return {
-        razonamiento: `El usuario consulta por el equipo médico o el Dr. Armando Gamboa. Proporciono información de respaldo profesional y confianza clínica.`,
-        respuesta: `👨‍⚕️ El director y especialista a cargo es el **Dr. Armando Gamboa Orellana**, profesional bioquímico-clínico con amplia trayectoria en diagnóstico de laboratorio, hematología y biología molecular.\n\nTodos los análisis y resultados procesados en nuestro laboratorio cuentan con su validación y los más estrictos controles de calidad biológica.`
+        razonamiento: `Director médico explicado con precisión y brevedad.`,
+        respuesta: `👨‍⚕️ El director es el **Dr. Armando Gamboa Orellana**, especialista bioquímico-clínico responsable de la validación y calidad de todos los análisis del laboratorio.`
       };
     }
   },
@@ -699,13 +831,17 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `El usuario consulta los horarios en chino/mixto. Proporciono el horario exacto del laboratorio de 07:30 a 18:00.`,
-          respuesta: `🕐 **甘博亚实验室营业时间 / Horario de Atención:**\n\n• **周一至周五 / Lunes a Viernes:** 07:30 - 18:00 hrs.\n• **抽血建议时间 / Toma de muestras:** 07:30 - 11:30 hrs（保证空腹准确性 / por protocolo de ayuno）.\n\n您想在哪个时间段预约？¿Deseas que te agende una cita en nuestro horario laboral?`
+          razonamiento: `Horario en chino.`,
+          respuesta: `🕐 Atendemos de **周一至周五 / Lunes a Viernes de 07:30 a 18:00 hrs** (muestras en ayunas de 07:30 a 11:30). ¿Deseas agendar un turno?`
         };
       }
+      const opciones = [
+        `🕐 Atendemos de **lunes a viernes de 07:30 a 18:00 hrs** en jornada continua (toma de muestras en ayunas de 07:30 a 11:30). ¿Te gustaría agendar una cita?`,
+        `Nuestro horario es de **lunes a viernes de 07:30 a 18:00 hrs** (para ayuno sugerimos venir antes de las 11:30). ¿Deseas programar tu visita?`
+      ];
       return {
-        razonamiento: `El paciente consulta los horarios del laboratorio. Explico el horario regular y el bloque matutino recomendado para muestras en ayunas.`,
-        respuesta: `🕐 **Horarios de Atención — Laboratorio Clínico Gamboa:**\n\n• **Lunes a Viernes:** 07:30 a 18:00 hrs (jornada continua).\n• **Toma de muestras en ayuno (sangre, lípidos, glucosa):** Se recomienda de **07:30 a 11:30 hrs** para garantizar la estabilidad de los parámetros biológicos.\n\n¿Te gustaría programar tu turno para hoy o algún día de esta semana?`
+        razonamiento: `Horarios precisos y directos con llamado a la acción.`,
+        respuesta: elegirVariacion(opciones)
       };
     }
   },
@@ -720,13 +856,13 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `Consulta de dirección o contacto en chino/mixto. Respondo con los canales oficiales y ubicación.`,
-          respuesta: `📍 **实验室地址与联系方式 / Ubicación y Contacto:**\n\n• **地址 / Dirección:** Laboratorio Clínico Gamboa, Centro Médico Central.\n• **电话 / Teléfono & WhatsApp:** Contacto disponible a través del sistema web y recepción.\n• **营业时间 / Horario:** Lunes a Viernes 07:30 a 18:00 hrs.\n\n如果您需要前来检查，我可以先帮您预约好时间！`
+          razonamiento: `Ubicación en chino.`,
+          respuesta: `📍 Estamos en las instalaciones centrales de **Lab. Gamboa**, de lunes a viernes de 07:30 a 18:00 hrs. ¿Te gustaría agendar tu cita?`
         };
       }
       return {
-        razonamiento: `El usuario pregunta por la ubicación o contacto del laboratorio. Brindo los detalles de localización y canales.`,
-        respuesta: `📍 **Ubicación y Contacto — Laboratorio Gamboa:**\n\n• **Instalaciones Centrales:** Edificio de Diagnóstico Clínico Gamboa.\n• **Atención:** Lunes a Viernes de 07:30 a 18:00 hrs.\n• **Contacto Digital:** A través de este portal PWA interactivo o directamente en recepción.\n\n¿Deseas agendar tu turno con anticipación para ser atendido sin filas?`
+        razonamiento: `Ubicación clara y directa.`,
+        respuesta: `📍 Estamos en las instalaciones centrales del **Laboratorio Clínico Gamboa**, atendiendo de lunes a viernes de 07:30 a 18:00 hrs. ¿Deseas agendar tu turno?`
       };
     }
   },
@@ -741,13 +877,17 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `El usuario pregunta por costos y métodos de pago en chino/mixto.`,
-          respuesta: `💰 **检查费用与支付方式 / Precios y Pagos:**\n\n• 甘博亚实验室提供最具性价比与高质量标准的化验服务。\n• **支付方式 / Métodos de pago:** 现金 (Efectivo)、银行转账 (Transferencia)、银行卡 (Tarjeta de débito/crédito)。\n• 具体费用根据您需要的项目（血常规、尿检、PCR、血脂等）在接诊处即时结算。\n\n您需要咨询哪一项具体检查？`
+          razonamiento: `Precios en chino.`,
+          respuesta: `💰 Ofrecemos tarifas solidarias y aceptamos efectivo, transferencia o tarjeta. ¿Qué examen necesitas realizarte para indicarte el costo exacto?`
         };
       }
+      const opciones = [
+        `💰 Manejamos tarifas accesibles y aceptamos efectivo, transferencias y tarjetas de débito/crédito. ¿Qué examen necesitas realizarte para darte el precio exacto?`,
+        `Nuestros precios son accesibles y con facilidades de pago (efectivo, tarjeta o transferencia). ¿Cuál es el estudio que te solicitó tu médico?`
+      ];
       return {
-        razonamiento: `El paciente consulta precios y medios de pago. Explico la accesibilidad y opciones de pago disponibles.`,
-        respuesta: `💰 **Precios y Formas de Pago — Laboratorio Gamboa:**\n\n• Manejamos tarifas solidarias y accesibles para toda la comunidad con tecnología automatizada de alta precisión.\n• **Métodos de pago aceptados:** Efectivo, transferencias bancarias y tarjetas de débito/crédito.\n• El presupuesto exacto se detalla en recepción según el paquete o examen solicitado.\n\n¿Qué estudio necesitas realizarte para brindarte información específica?`
+        razonamiento: `Costos y formas de pago resumidos en 2 oraciones.`,
+        respuesta: elegirVariacion(opciones)
       };
     }
   },
@@ -762,13 +902,13 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `Consulta sobre entrega y descarga de resultados en chino/mixto. Guío al panel de resultados.`,
-          respuesta: `📊 **化验结果查询与下载 / Consulta de Resultados:**\n\n• 血常规与尿检通常在 **当天或24小时内** 完成。\n• 您可以在系统主界面的 **"Resultados Clínicos"（临床报告）** 栏目直接查看并下载官方PDF报告！\n• 报告由甘博亚医生（Dr. Gamboa）亲笔签名与认证。`
+          razonamiento: `Resultados en chino.`,
+          respuesta: `📊 Los análisis de sangre y orina están listos en **24 horas** (PCR en 24-48h). Puedes descargarlos en PDF desde la sección **"Resultados Clínicos"**. ¿Tienes alguna otra duda?`
         };
       }
       return {
-        razonamiento: `El usuario desea saber cómo y cuándo obtiene sus resultados. Detallo tiempos de entrega y descarga digital en PDF.`,
-        respuesta: `📊 **Entrega y Consulta de Resultados Clínicos:**\n\n• **Tiempos de entrega:**\n  - Análisis de Sangre y Orina: **El mismo día o en 24 horas**.\n  - Perfil Lipídico y Glucosa: **24 horas**.\n  - Detección Molecular (PCR): **24 a 48 horas**.\n• **Descarga directa:** Puedes visualizarlos y descargarlos con su firma médica oficial en formato PDF directamente en la sección **"Resultados Clínicos"** de tu panel.`
+        razonamiento: `Tiempos de entrega y descarga explicados en breve.`,
+        respuesta: `📊 Los análisis de sangre y orina están listos en **24 horas** (PCR en 24-48h). Puedes visualizarlos y descargarlos en PDF desde la sección **"Resultados Clínicos"** de tu panel.`
       };
     }
   },
@@ -782,8 +922,8 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     palabrasIngles: ['can i drink water', 'daily medicine', 'does the needle hurt', 'can i smoke', 'alcohol', 'coffee'],
     generarRespuesta: (idioma) => {
       return {
-        razonamiento: `El usuario pregunta por dudas clínicas cotidianas (agua en ayuno, dolor, medicamentos o hábitos). Proporciono una orientación médica clara, tranquilizadora y profesional.`,
-        respuesta: `💡 **Respuestas a Dudas Frecuentes:**\n\n• 💧 **¿Puedo beber agua durante el ayuno?** Sí, agua pura en cantidad moderada está permitida. Lo que debes evitar son jugos, refrescos, té, café o masticar chicle.\n• 💊 **¿Puedo tomar mis medicamentos diarios?** Medicamentos para la presión arterial pueden tomarse con un sorbo de agua. Si tomas medicamentos para la diabetes o tiroides, consúltanos antes de la toma de muestra.\n• 🩸 **¿Duele la extracción?** Solo se siente una ligera molestia de pocos segundos; nuestro personal está altamente capacitado para punciones suaves y rápidas.\n• 🚫 **Alcohol y tabaco:** Evita bebidas alcohólicas al menos 24 a 48 horas antes de cualquier prueba sanguínea o lipídica.`
+        razonamiento: `Dudas frecuentes respondidas de manera sintética y clara.`,
+        respuesta: `💡 Durante el ayuno puedes beber **agua pura en poca cantidad**; evita jugos, café, alcohol o fumar. Medicamentos de la presión tómalos con un sorbo de agua. ¿Tienes alguna otra duda?`
       };
     }
   },
@@ -797,8 +937,8 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     palabrasIngles: ['how to prepare', 'preparation', 'fasting', 'instructions'],
     generarRespuesta: (idioma) => {
       return {
-        razonamiento: `El usuario consulta la preparación general para los estudios clínicos. Detallo los protocolos según el tipo de examen.`,
-        respuesta: `📋 **Protocolos de Preparación según el Examen:**\n\n• 🩸 **Análisis de Sangre (Rutina):** 8 horas de ayuno (solo agua permitida). Sin alcohol 24h antes.\n• 🧬 **Perfil Lipídico (Colesterol/Triglicéridos):** 12 a 14 horas de ayuno estricto. Cero comidas grasas o alcohol 72h antes.\n• 🩺 **Glucosa / Curva de Tolerancia:** 8 a 10 horas de ayuno. Dieta normal los días previos, sin exceso de dulces.\n• 🧪 **Análisis de Orina:** Primer chorro descartado; higiene íntima previa. Muestra de la primera orina de la mañana.\n• 🦠 **PCR / Molecular:** Sin alimentos, bebidas ni enjuague bucal 2 horas antes de la prueba.`
+        razonamiento: `Protocolos de preparación sintetizados.`,
+        respuesta: `📋 Para sangre y glucosa se requieren **8h de ayuno**; para perfil lipídico, **12h**. La orina debe ser la primera de la mañana. ¿Para qué examen te estás preparando?`
       };
     }
   },
@@ -811,15 +951,14 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     palabrasChinas: ['谢谢', '多谢', '感谢', '再见', '拜拜', '好的谢谢'],
     palabrasIngles: ['thank you', 'thanks', 'bye', 'goodbye', 'see you'],
     generarRespuesta: (idioma, nombre) => {
-      if (idioma.esChino) {
-        return {
-          razonamiento: `El usuario agradece o se despide en chino/mixto. Concluyo de manera cordial.`,
-          respuesta: `不客气！祝您健康平安！😊 如果您还有任何疑问，随时向我提问。再见！\n\n¡Ha sido un placer${nombre ? ` ${nombre}` : ''}! Cuida mucho de tu salud y aquí estaré cuando me necesites. ¡Hasta pronto! 👋`
-        };
-      }
+      const opciones = [
+        `¡Con mucho gusto${nombre ? `, ${nombre}` : ''}! Cuida tu salud y aquí estaré cuando me necesites. ¡Hasta pronto! 👋`,
+        `¡Un placer ayudarte${nombre ? `, ${nombre}` : ''}! Que tengas un excelente día. 🌟`,
+        `¡Listo! Si necesitas algo más del laboratorio, con gusto te atenderé. ¡Cuídate mucho! 😊`
+      ];
       return {
-        razonamiento: `El usuario agradece o se despide. Cierro la interacción con cordialidad médica y calidez.`,
-        respuesta: `¡Ha sido todo un gusto ayudarte${nombre ? `, ${nombre}` : ''}! 😊 En el **Laboratorio Gamboa** estamos comprometidos con tu bienestar y precisión diagnóstica.\n\nSi necesitas agendar o tienes cualquier otra duda, ¡aquí estaré siempre a tu servicio! Que tengas un excelente día. 🌟`
+        razonamiento: `Despedida cordial y breve.`,
+        respuesta: elegirVariacion(opciones)
       };
     }
   }
@@ -1056,6 +1195,16 @@ function manejarConversacionAbierta(
       puntaje += 25; // Asegura que gane inmediatamente si el paciente describe dolor o malestar
     }
 
+    // Prioridad alta a consultas externas (recetas de cocina, chistes, cultura general)
+    if (regla.categoria === 'CONSULTA_EXTERNA_NO_CLINICA' && puntaje > 0) {
+      puntaje += 30;
+    }
+
+    // Prioridad muy alta a orientación de diagnósticos y recomendación de exámenes
+    if (regla.categoria === 'ORIENTACION_DIAGNOSTICOS_EXAMENES' && puntaje > 0) {
+      puntaje += 35;
+    }
+
     if (puntaje > maxPuntaje) {
       maxPuntaje = puntaje;
       mejorRegla = regla;
@@ -1075,28 +1224,37 @@ function manejarConversacionAbierta(
 
   if (mejorRegla && maxPuntaje >= 5) {
     pensamientoPasos.push(`Paso 3 (Comprensión semántica): Intención clasificada como [${mejorRegla.categoria}] (afinidad: ${maxPuntaje} pts).`);
-    const { respuesta, razonamiento } = mejorRegla.generarRespuesta(idioma, contexto.nombre);
-    pensamientoPasos.push(`Paso 4 (Razonamiento contextual): ${razonamiento}`);
+    const resp = mejorRegla.generarRespuesta(idioma, contexto.nombre);
+    pensamientoPasos.push(`Paso 4 (Razonamiento contextual): ${resp.razonamiento}`);
 
     contexto.ultimaIntencion = mejorRegla.categoria;
     return {
       pensamiento: pensamientoPasos.join(' '),
-      respuesta,
+      respuesta: resp.respuesta,
       intencion: mejorRegla.categoria,
+      accion: resp.accion,
+      opcionesExamen: resp.opcionesExamen,
+      opciones: resp.opciones,
     };
   }
 
-  // Fallback Inteligente y Empático para "cualquier otra cosa"
-  pensamientoPasos.push(`Paso 3 (Interacción abierta): El usuario formula una consulta libre o no estructurada. Interpreto su inquietud con razonamiento clínico y cortesía.`);
-  pensamientoPasos.push(`Paso 4 (Respuesta asistencial): Brindo orientación completa del laboratorio, ofreciendo responder dudas sobre análisis, precios, horarios o programación de citas.`);
+  // Fallback breve, variado y conciso para cualquier consulta fuera del catálogo del laboratorio
+  pensamientoPasos.push(`Paso 3 (Interacción abierta): Consulta general fuera del área de laboratorio. Aplico delimitación concisa.`);
+  pensamientoPasos.push(`Paso 4 (Orientación breve): Respuesta dinámica y cordial orientando a análisis clínicos y citas.`);
+
+  const fallbacksEspanol = [
+    `Lo siento, no te puedo ayudar con esos datos. Como agente de Laboratorio Gamboa puedo ayudarte a registrar una cita para un análisis clínico o brindarte información sobre nuestros exámenes.`,
+    `Esa consulta queda fuera de mis registros del laboratorio. Con gusto te ayudo a agendar tu cita clínica o resolver dudas sobre nuestros análisis disponibles.`,
+    `Disculpa, no dispongo de esa información ya que me enfoco exclusivamente en análisis de laboratorio. ¿Te gustaría agendar una cita o ver los exámenes disponibles?`
+  ];
 
   let respuestaFallback = '';
   if (idioma.esChino) {
-    respuestaFallback = `您好！我已经理解您的消息。😊 作为甘博亚实验室的AI助手，我可以为您解答任何关于身体检查、空腹注意事项、报告查询或时间预约的问题。\n\n请问您是想咨询某项具体化验（如血常规、PCR、尿检），还是需要我帮您预约时间？`;
+    respuestaFallback = `抱歉，我无法为您提供该信息。作为甘博亚实验室的助理，我可以帮您预约化验时间或查询检查项目。请问需要帮您挂号吗？`;
   } else if (idioma.esIngles && !idioma.esEspanol) {
-    respuestaFallback = `Hello! I understand your message. 😊 As your AI clinical assistant at Lab. Gamboa, I'm here to help with any laboratory tests, fasting guidelines, prices, or scheduling an appointment.\n\nWould you like to schedule a test, check your results, or know more about our lab services?`;
+    respuestaFallback = `I'm sorry, I cannot help with that information. As a Gamboa Laboratory assistant, I can help you schedule a lab test appointment or provide info on our tests. Would you like to schedule one?`;
   } else {
-    respuestaFallback = `Te entiendo perfectamente. 😊 Como asistente del **Laboratorio Gamboa**, estoy aquí para orientarte en todo lo relacionado con tu salud diagnóstica.\n\nPuedes preguntarme sobre:\n• 🩸 **Preparación y ayuno** para sangre, orina, PCR o lípidos.\n• 🕐 **Nuestros horarios de atención** (07:30 a 18:00 hrs).\n• 💰 **Costos y formas de pago**.\n• 📅 **Programar o modificar una cita** en pocos segundos.\n\n¿En qué tema específico te gustaría que te oriente?`;
+    respuestaFallback = elegirVariacion(fallbacksEspanol);
   }
 
   contexto.ultimaIntencion = 'CHARLA_LIBRE';
@@ -1104,5 +1262,6 @@ function manejarConversacionAbierta(
     pensamiento: pensamientoPasos.join(' '),
     respuesta: respuestaFallback,
     intencion: 'CHARLA_LIBRE',
+    opciones: ['📅 Programar cita', '⏰ Horarios de atención', '🧪 Exámenes disponibles'],
   };
 }

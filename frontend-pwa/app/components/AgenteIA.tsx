@@ -704,6 +704,11 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
             dataCita: data.citaSlots as CitaForm
           }));
         }
+      } else if ((data.opciones && data.opciones.length > 0) || (data.opcionesExamen && data.opcionesExamen.length > 0)) {
+        push(agente(data.respuesta, "opciones", {
+          pensamiento: data.pensamiento || "",
+          opciones: data.opciones || data.opcionesExamen
+        }));
       } else {
         // Respuesta normal sin acción específica
         push(agente(data.respuesta, "normal", {

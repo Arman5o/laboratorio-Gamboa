@@ -58,6 +58,7 @@ export class AgenteIaController {
       accion: resultado.accion,
       citaSlots: resultado.citaSlots,
       opcionesExamen: resultado.opcionesExamen,
+      opciones: (resultado as any).opciones || resultado.opcionesExamen,
     };
   }
 
