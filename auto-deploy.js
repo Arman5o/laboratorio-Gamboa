@@ -9,7 +9,7 @@ conn.on('ready', () => {
   
   // Vamos a usar git stash para evitar errores si el admin modificó algo, luego git pull, luego build y reiniciar
   const commands = `
-    cd ~/pwa-laboratorio-gamboa || cd /var/www/pwa-laboratorio-gamboa
+    cd /var/www/proyectos/gamboa || cd ~/pwa-laboratorio-gamboa
     echo "⬇️  Descargando cambios (git pull)..."
     git stash
     git pull

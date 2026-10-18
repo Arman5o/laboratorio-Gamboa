@@ -84,6 +84,7 @@ export default function Login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credenciales),
+        signal: AbortSignal.timeout(10000),
       });
 
       if (resAdmin.ok) {
@@ -101,6 +102,7 @@ export default function Login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credenciales),
+        signal: AbortSignal.timeout(10000),
       });
 
       if (resPaciente.ok) {
@@ -134,6 +136,7 @@ export default function Login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credential }),
+        signal: AbortSignal.timeout(10000),
       });
 
       if (res.ok) {
