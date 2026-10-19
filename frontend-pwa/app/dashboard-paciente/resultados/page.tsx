@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { io } from "socket.io-client";
 import { fetchAuth } from "../../utils/fetchAuth";
-import { API_URL } from "../../utils/api";
+import { API_URL, conectarSocket } from "../../utils/api";
 import AgenteIA from "../../components/AgenteIA";
 
 const CATALOGO_EXAMENES = [
@@ -66,7 +65,7 @@ export default function ResultadosClinicos() {
     cargarCitasDesdeBD();
 
     // Tiempo Real (WebSockets)
-    const socket = io(API_URL);
+    const socket = conectarSocket();
     socket.on('citaActualizada', (cita) => {
       if (cita.pacienteCorreo?.toLowerCase() === correoGuardado.toLowerCase()) {
         cargarCitasDesdeBD();

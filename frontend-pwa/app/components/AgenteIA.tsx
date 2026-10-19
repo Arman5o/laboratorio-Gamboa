@@ -2,9 +2,9 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { io, Socket } from "socket.io-client";
+import { Socket } from "socket.io-client";
 import { fetchAuth } from "../utils/fetchAuth";
-import { API_URL } from "../utils/api";
+import { API_URL, conectarSocket } from "../utils/api";
 
 // ─── TIPOS ───────────────────────────────────────────────
 type Rol = "paciente" | "admin";
@@ -280,7 +280,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
   // ─── WEBSOCKET ─────────────────────────────────────────
   useEffect(() => {
-    const socket = io(API_URL, { transports: ["websocket"] });
+    const socket = conectarSocket();
     socketRef.current = socket;
 
     const correoActual = typeof window !== "undefined" ? localStorage.getItem("pacienteEmail") : "";

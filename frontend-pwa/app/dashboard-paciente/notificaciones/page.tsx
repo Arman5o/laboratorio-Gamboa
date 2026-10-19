@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { io, Socket } from "socket.io-client";
-import { API_URL } from "../../utils/api";
+import { Socket } from "socket.io-client";
+import { API_URL, conectarSocket } from "../../utils/api";
 import { fetchAuth } from "../../utils/fetchAuth";
 
 type Notificacion = {
@@ -42,7 +42,7 @@ export default function NotificacionesPaciente() {
     // Inicializamos Socket.io apuntando a nuestra API_URL.
     // Usamos 'websocket' puro para mejor rendimiento.
     // ==========================================
-    const socket = io(API_URL, { transports: ["websocket"] });
+    const socket = conectarSocket();
     socketRef.current = socket;
 
     // ==========================================

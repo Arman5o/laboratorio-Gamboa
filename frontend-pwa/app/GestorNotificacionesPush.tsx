@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { io } from "socket.io-client";
-import { API_URL } from "./utils/api";
+import { conectarSocket } from "./utils/api";
 import { dispararNotificacionNativa, solicitarPermisoNotificaciones } from "./utils/notificacionesNativas";
 
 export default function GestorNotificacionesPush() {
@@ -28,7 +27,11 @@ export default function GestorNotificacionesPush() {
     }
 
     // Conectar WebSocket global para recibir alertas aunque el usuario navegue en cualquier página
-    const socket = io(API_URL, { transports: ["websocket"] });
+    const socket = conectarSocket();
+
+    socket.on("connect", () => {
+      console.log("🔔 [Push PWA] WebSocket conectado en tiempo real:", socket.id);
+    });
 
     const reproducirSonido = () => {
       try {
@@ -52,11 +55,13 @@ export default function GestorNotificacionesPush() {
 
       const citaCorreo = (datosCita?.pacienteCorreo || datosCita?.correo || "").trim().toLowerCase();
 
-      // Verificar si la notificación corresponde al usuario actual
-      const esParaMi = (correoPaciente && citaCorreo === correoPaciente) ||
-                       (correoAdmin && (datosCita?.destinatario === "admin" || !citaCorreo));
+      // Verificar si la notificación corresponde al usuario actual (Paciente o Admin)
+      const esAdmin = !!correoAdmin;
+      const esParaAdmin = esAdmin && (tipo === "NUEVA_CITA" || datosCita?.destinatario === "admin" || !citaCorreo);
+      const esParaPaciente = !!correoPaciente && (citaCorreo === correoPaciente || !citaCorreo);
+      const esParaMi = esParaAdmin || esParaPaciente;
 
-      if (esParaMi || (!citaCorreo && correoPaciente)) {
+      if (esParaMi) {
         reproducirSonido();
 
         let titulo = "🔔 Lab. Gamboa — Notificación";

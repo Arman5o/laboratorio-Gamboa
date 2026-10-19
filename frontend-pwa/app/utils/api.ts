@@ -1,3 +1,5 @@
+import { io, Socket } from 'socket.io-client';
+
 /**
  * URL base de la API del backend.
  * Usa NEXT_PUBLIC_API_URL del .env.local, o auto-detecta la IP del servidor
@@ -26,3 +28,32 @@ export const API_URL: string = (() => {
   // 3. Fallback para SSR
   return 'http://localhost:3001';
 })();
+
+/**
+ * Conecta Socket.IO apuntando a la ruta adecuada según el entorno:
+ * - Local / Red local: http://<host>:3001 (directo a NestJS)
+ * - Producción (laboratoriogamboa.com): origin actual con path '/api/socket.io' (a través del proxy seguro Nginx)
+ */
+export function conectarSocket(): Socket {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname || 'localhost';
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
+
+    if (isLocal) {
+      return io(`http://${host}:3001`, {
+        transports: ['websocket', 'polling'],
+      });
+    }
+
+    // En producción con dominio público: pasar por Nginx /api/socket.io
+    return io(window.location.origin, {
+      path: '/api/socket.io',
+      transports: ['websocket', 'polling'],
+    });
+  }
+
+  return io(API_URL, {
+    transports: ['websocket', 'polling'],
+  });
+}
+

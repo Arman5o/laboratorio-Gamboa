@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { io, Socket } from "socket.io-client";
-import { API_URL } from "../../utils/api";
+import { Socket } from "socket.io-client";
+import { API_URL, conectarSocket } from "../../utils/api";
 
 type Notificacion = {
   id: string;
@@ -33,8 +33,7 @@ export default function NotificacionesAdmin() {
     setAdminEmail(email);
     setAdminName(nombre ?? "Administrador");
 
-    const ipActual = window.location.hostname;
-    const socket = io(API_URL, { transports: ["websocket"] });
+    const socket = conectarSocket();
     socketRef.current = socket;
 
     // Cargar historial de notificaciones desde la DB

@@ -63,25 +63,35 @@ export async function dispararNotificacionNativa({
   };
 
   try {
-    // 1. Prioridad: Disparar a través del Service Worker (Requisito para móviles y pantalla bloqueada)
+    // 1. Prioridad: Disparar a través del Service Worker (Requisito para móviles Android/iOS y pantalla bloqueada)
     if ("serviceWorker" in navigator) {
-      const registro = await navigator.serviceWorker.getRegistration();
-      if (registro && registro.showNotification) {
-        await registro.showNotification(titulo, opciones);
-        return true;
+      try {
+        const registro = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise<null>((r) => setTimeout(() => r(null), 1500)),
+        ]);
+        if (registro && (registro as any).showNotification) {
+          await (registro as any).showNotification(titulo, opciones);
+          return true;
+        }
+      } catch (swErr) {
+        console.warn("Fallo showNotification de ServiceWorker, intentando Notification directo:", swErr);
       }
     }
 
     // 2. Fallback: Notificación directa del navegador (computadoras de escritorio)
-    const notif = new Notification(titulo, opciones);
-    notif.onclick = () => {
-      window.focus();
-      if (url && typeof window !== "undefined") {
-        window.location.href = url;
-      }
-      notif.close();
-    };
-    return true;
+    if (typeof Notification !== "undefined") {
+      const notif = new Notification(titulo, opciones);
+      notif.onclick = () => {
+        window.focus();
+        if (url && typeof window !== "undefined") {
+          window.location.href = url;
+        }
+        notif.close();
+      };
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error("Error al mostrar la notificación nativa:", error);
     return false;
