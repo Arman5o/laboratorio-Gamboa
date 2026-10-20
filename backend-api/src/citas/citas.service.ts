@@ -42,8 +42,7 @@ export class CitasService {
     
     const deseadoMin = this.aMinutos(horaDeseada);
     
-    const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
-    const requiereAyuno = examen ? examenesAyuno.includes(examen) : false;
+    const requiereAyuno = examen ? /sangre|lipid|lipíd|glucosa|ayuno/i.test(examen) : false;
 
     const rangos = requiereAyuno
       ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }]

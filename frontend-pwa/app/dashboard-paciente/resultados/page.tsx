@@ -128,8 +128,7 @@ export default function ResultadosClinicos() {
     const minApertura = 7 * 60 + 30; // 07:30
     const minCierre = 18 * 60;       // 18:00
 
-    const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
-    const requiereAyuno = examenesAyuno.includes(examen);
+    const requiereAyuno = /sangre|lipid|lipíd|glucosa|ayuno/i.test(examen);
 
     if (minTotal < minApertura || minTotal > minCierre) {
       setErrorEdicion(`La hora ${nuevaHora} está fuera del horario de atención del laboratorio (07:30 a 18:00 hrs).`);

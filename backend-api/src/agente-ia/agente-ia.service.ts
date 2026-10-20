@@ -7,7 +7,7 @@ import { CitasGateway } from '../citas/citas.gateway';
 import { Cita } from '../citas/schemas/cita.schema';
 import { LogAgente } from './schemas/log-agente.schema';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
-import { procesarConMotorDeReglas, ContextoSesion } from './motor-reglas';
+import { procesarConMotorDeReglas, ContextoSesion, obtenerRecomendacionesClinicas } from './motor-reglas';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 @Injectable()
@@ -63,7 +63,10 @@ Reglas operativas y entrenamiento:
 7. POLÍTICA DE PRECIOS Y TARIFAS (MONEDA OFICIAL: BOLIVIANOS - Bs.):
    - La moneda del laboratorio es el BOLIVIANO (Bs.). NUNCA utilices dólares ($) ni menciones cifras exorbitantes (como $250).
    - Los análisis clínicos de rutina (como sangre, orina, glucosa) tienen costos muy económicos y accesibles, con un rango aproximado de 20 a 50 Bs.
-   - Si el usuario pregunta por precios o costos: responde siempre indicando que los análisis clínicos tienen costos aproximados entre 20 y 50 Bs., y aclara con amabilidad que para costos específicos, cotizaciones exactas o pruebas especializadas puede contactarse directamente con el encargado o la administración del laboratorio.`,
+   - Si el usuario pregunta por precios o costos: responde siempre indicando que los análisis clínicos tienen costos aproximados entre 20 y 50 Bs., y aclara con amabilidad que para costos específicos, cotizaciones exactas o pruebas especializadas puede contactarse directamente con el encargado al 71772118 o a la administración del laboratorio.
+8. INFORMACIÓN DE CONTACTO DEL ENCARGADO / LABORATORIO (TELÉFONO / WHATSAPP: 71772118):
+   - El número de contacto oficial del encargado del laboratorio es el 71772118 (disponible para llamadas telefónicas y WhatsApp).
+   - Si el usuario pregunta por el contacto, teléfono, celular o WhatsApp del encargado o del laboratorio, o pregunta a qué número escribir/llamar para consultar costos precisos o cualquier duda: responde SIEMPRE proporcionando el número 71772118 de forma cordial y concisa.`,
         });
         this.logger.log('🧠 [AIDA] Copiloto neuronal Gemini 3.5 Flash-Lite inicializado con éxito');
       } catch (err) {
@@ -191,14 +194,7 @@ Reglas operativas y entrenamiento:
   }
 
   private generarRecomendaciones(examen: string): string[] {
-    const recomendaciones: Record<string, string[]> = {
-      'Análisis de Sangre (Rutina)': ['🌙 Ayuno de 8 horas previo', '💧 Puedes beber agua con moderación', '🧘 Descansa bien la noche anterior', '🚫 Evita alcohol 24 horas antes'],
-      'Detección Molecular (PCR)': ['🚫 No comas ni bebas 2 horas antes', '😷 Acude con mascarilla obligatoriamente', '🧬 Evita aerosoles nasales 24h antes', '🚫 No fumes antes de la prueba'],
-      'Análisis de Orina (Completo)': ['🧴 Realiza higiene genital antes de recolectar', '🧬 Desecha el primer chorro de orina', '🍠 Evita remolacha o zanahoria días previos', '🚫 No consumas alcohol 24 horas antes'],
-      'Perfil Lipídico': ['🍽️ Ayuno estricto de 12-14 horas', '🚭 No fumes antes del examen', '🏃 Evita ejercicio intenso el día anterior', '🚫 Cero alcohol 72 horas antes (altera triglicéridos)'],
-      'Prueba de Tolerancia a la Glucosa': ['🍬 Evita azúcares refinados 2 días antes', '🌙 Ayuno de 8-10 horas', '☕ No tomes café antes de la prueba', '🚫 Evita alcohol 48 horas antes'],
-    };
-    return recomendaciones[examen] ?? ['📋 Sigue las instrucciones del laboratorio', '🆔 Trae tu cédula de identidad'];
+    return obtenerRecomendacionesClinicas(examen);
   }
 
   private async registrarLog(fecha: string, accion: string, descripcion: string, citasNotificadas: number, resultado: string): Promise<void> {
@@ -408,6 +404,13 @@ Reglas operativas y entrenamiento:
     if (resultadoLocal.intencion === 'PRECIOS_PAGOS') {
       contexto.ultimaIntencion = 'PRECIOS_PAGOS';
       this.logger.log(`💰 [AIDA Precios] Información de costos en Bolivianos (20 a 50 Bs) provista.`);
+      return resultadoLocal as any;
+    }
+
+    // 2.5 Consultas de contacto del encargado o teléfono del laboratorio (71772118)
+    if (resultadoLocal.intencion === 'CONTACTO_ENCARGADO' || resultadoLocal.intencion === 'UBICACION_CONTACTO') {
+      contexto.ultimaIntencion = resultadoLocal.intencion;
+      this.logger.log(`📞 [AIDA Contacto] Información de contacto del encargado (71772118) provista.`);
       return resultadoLocal as any;
     }
 

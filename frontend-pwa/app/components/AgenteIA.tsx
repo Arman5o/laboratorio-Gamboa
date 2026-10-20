@@ -24,6 +24,7 @@ type CitaForm = {
   examen: string;
   fecha: string;
   hora: string;
+  recomendaciones?: string[];
 };
 
 type FlujoCita =
@@ -214,6 +215,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   const [mounted, setMounted] = useState(false); // Para SSR safety con createPortal
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const idRef = useRef(1);
 
   // ─── DRAG & DROP ESTADOS ───
@@ -322,6 +324,16 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensajes, cargando]);
 
+  // ─── AUTO-FOCUS INPUT ─────────────────────────────────
+  useEffect(() => {
+    if (abierto && vista === "chat" && !cargando) {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [abierto, vista, cargando]);
+
   // ─── CARGAR LOGS ───────────────────────────────────────
   const cargarLogs = async () => {
     try {
@@ -389,8 +401,12 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       const esHoy = fecha === hoyStr;
       const minActual = ahora.getHours() * 60 + ahora.getMinutes() + 15;
 
-      const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
-      const requiereAyuno = examen ? examenesAyuno.includes(examen) : false;
+      const requiereAyuno = examen ? /sangre|lipid|lipíd|lipidico|glucosa|ayuno|hemograma|biometr/i.test(examen) : false;
+
+      // Si es hoy, y el examen requiere ayuno, y ya pasó el mediodía: no hay horarios disponibles
+      if (esHoy && requiereAyuno && minActual >= 12 * 60) {
+        return [];
+      }
 
       const rangos = requiereAyuno
         ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }] // Solo mañana por ayuno
@@ -414,7 +430,6 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
       // Filtrar para no mostrar exagerada cantidad de botones (máximo 5 opciones estratégicas)
       if (libres.length > 5) {
-        // Tomar algunas de la mañana y algunas de la tarde si hay
         const step = Math.floor(libres.length / 5);
         return libres.filter((_, i) => i % step === 0).slice(0, 5);
       }
@@ -504,9 +519,13 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       });
 
       if (res.ok) {
+        const recsTexto = form.recomendaciones && form.recomendaciones.length > 0
+          ? `\n\n📋 **Previsiones para tu cita:**\n` + form.recomendaciones.map((r: string) => `• ${r}`).join('\n')
+          : '';
+
         push(
           agente(
-            `✅ **¡Cita confirmada!**\n\n📋 **${form.examen}**\n📆 ${form.fecha}\n🕐 ${form.hora}\n\nRecibirás una confirmación por correo electrónico. ¡Hasta pronto! 😊`,
+            `✅ **¡Cita confirmada!**\n\n🔬 **${form.examen}**\n📆 ${form.fecha}\n🕐 ${form.hora} hrs${recsTexto}\n\nRecibirás una confirmación por correo electrónico. ¡Hasta pronto! 😊`,
             "exito"
           )
         );
@@ -582,14 +601,13 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   const handleOpcion = async (opcion: string) => {
     push(usuario(opcion));
 
-    if (opcion.startsWith("🔄 Modificar cita existente")) {
+    if (opcion.includes("Modificar cita existente")) {
       const form = citaForm as any;
       if (form?.idCitaExistente && form?.fecha && form?.hora) {
-        push(agente("⏳ Actualizando tu cita activa..."));
+        push(agente("⏳ Actualizando tu cita..."));
         await modificarCitaExistente(form.idCitaExistente, form);
         return;
       } else {
-        // Intentar buscar la cita activa de esa fecha
         try {
           const correo = localStorage.getItem("pacienteEmail") ?? "";
           const res = await fetchAuth(`${API_URL}/citas/paciente/${correo}`);
@@ -597,7 +615,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
             const citas = await res.json();
             const citaMismoDia = citas.find((c: any) => c.fecha === form.fecha && c.estado !== 'cancelada');
             if (citaMismoDia) {
-              push(agente("⏳ Actualizando tu cita activa..."));
+              push(agente("⏳ Actualizando tu cita..."));
               await modificarCitaExistente(citaMismoDia._id, form);
               return;
             }
@@ -608,9 +626,19 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       }
     }
 
-    if (opcion === "📅 Elegir otra fecha") {
-      push(agente("Selecciona una nueva fecha para tu estudio:", "fecha"));
+    if (opcion === "📅 Elegir otra fecha" || opcion === "📅 Elegir otra fecha") {
+      push(agente("Selecciona una nueva fecha:", "fecha"));
       setFlujo("esperando_fecha");
+      return;
+    }
+
+    // Manejar 'Sí, para mañana' / 'Agendar para mañana'
+    if (opcion.includes("para mañana") || opcion.includes("Agendar para mañana")) {
+      const manana = new Date();
+      manana.setDate(manana.getDate() + 1);
+      const fechaManana = `${manana.getFullYear()}-${String(manana.getMonth() + 1).padStart(2, '0')}-${String(manana.getDate()).padStart(2, '0')}`;
+      push(usuario(`📆 ${fechaManana}`));
+      await enviarAlBackend(fechaManana);
       return;
     }
 
@@ -669,7 +697,10 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
       // Actualizar slots si vienen del NLU
       if (data.citaSlots) {
-        setCitaForm(data.citaSlots);
+        setCitaForm({
+          ...data.citaSlots,
+          recomendaciones: data.recomendaciones || data.citaSlots.recomendaciones
+        });
       }
 
       // Procesar acciones del NLU
@@ -699,9 +730,14 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
           }
         } else if (data.accion === "CONFIRMAR_CITA") {
           setFlujo("confirmando");
+          const formCompleto: CitaForm = {
+            ...(data.citaSlots as CitaForm),
+            recomendaciones: data.recomendaciones || data.citaSlots?.recomendaciones
+          };
+          setCitaForm(formCompleto);
           push(agente(data.respuesta, "confirmacion", {
             pensamiento: data.pensamiento || "",
-            dataCita: data.citaSlots as CitaForm
+            dataCita: formCompleto
           }));
         }
       } else if ((data.opciones && data.opciones.length > 0) || (data.opcionesExamen && data.opcionesExamen.length > 0)) {
@@ -739,9 +775,11 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     const texto = input.trim();
     if (!texto || cargando) return;
     setInput("");
+    inputRef.current?.focus();
     push(usuario(texto));
 
     await enviarAlBackend(texto);
+    inputRef.current?.focus();
   };
 
   const notifsNoLeidas = notificaciones.filter((n) => !n.leida).length;
@@ -866,7 +904,10 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
                     {["📅 Programar cita", "⏰ Horarios", "🧪 Preparación", "📋 Mis citas"].map((s) => (
                       <button
                         key={s}
-                        onClick={() => { setInput(s); }}
+                        onClick={() => {
+                          setInput(s);
+                          inputRef.current?.focus();
+                        }}
                         className="text-[11px] bg-slate-800/80 border border-slate-700/80 text-cyan-400 px-3 py-2 rounded-full hover:bg-cyan-900/30 hover:border-cyan-600 transition-all whitespace-nowrap text-center sm:shrink-0"
                       >
                         {s}
@@ -879,12 +920,17 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
               {/* Input */}
               <div className="p-3 border-t border-slate-800 flex gap-2 shrink-0">
                 <input
+                  ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && enviarMensaje()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      enviarMensaje();
+                    }
+                  }}
                   placeholder={cargando ? "AIDA está pensando..." : flujo === "idle" ? "Pregúntale algo a AIDA..." : "Escribe o usa los botones de arriba..."}
-                  disabled={cargando}
-                  className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-200 text-xs outline-none focus:border-cyan-500 focus:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-200 text-xs outline-none focus:border-cyan-500 focus:bg-slate-800 transition-all"
                 />
                 <button
                   onClick={enviarMensaje}
@@ -1122,7 +1168,7 @@ function BurbujaMensaje({
               <div className="flex items-center gap-2">
                 <span className="text-sm">🧪</span>
                 <p className="text-xs text-slate-300">
-                  <span className="text-slate-500">Estudio:</span>{" "}
+                  <span className="text-slate-500">Estudio(s):</span>{" "}
                   <strong className="text-slate-100">{msg.dataCita.examen}</strong>
                 </p>
               </div>
@@ -1137,9 +1183,26 @@ function BurbujaMensaje({
                 <span className="text-sm">🕐</span>
                 <p className="text-xs text-slate-300">
                   <span className="text-slate-500">Hora:</span>{" "}
-                  <strong className="text-cyan-400 font-mono text-sm">{msg.dataCita.hora}</strong>
+                  <strong className="text-cyan-400 font-mono text-sm">{msg.dataCita.hora} hrs</strong>
                 </p>
               </div>
+
+              {/* Protocolo de recomendaciones clínicas IA */}
+              {msg.dataCita.recomendaciones && msg.dataCita.recomendaciones.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-700/60">
+                  <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>📋</span> Previsiones antes del estudio:
+                  </p>
+                  <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {msg.dataCita.recomendaciones.map((rec, i) => (
+                      <li key={i} className="text-[11px] text-slate-300 leading-snug flex items-start gap-1.5 bg-slate-900/60 p-2 rounded-lg border border-slate-700/50">
+                        <span className="text-amber-400 shrink-0 mt-0.5">•</span>
+                        <span>{rec}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <button

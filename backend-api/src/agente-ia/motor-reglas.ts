@@ -19,6 +19,7 @@ export interface CitaSlots {
   examen?: string;
   fecha?: string;  // formato YYYY-MM-DD
   hora?: string;   // formato HH:MM
+  recomendaciones?: string[];
 }
 
 export interface ContextoSesion {
@@ -38,6 +39,7 @@ export interface ResultadoAgente {
   citaSlots?: CitaSlots;
   opcionesExamen?: string[];
   opciones?: string[];
+  recomendaciones?: string[];
 }
 
 export const EXAMENES_OFICIALES = [
@@ -225,6 +227,11 @@ const MAPA_CORRECCIONES_RAPIDAS: Record<string, string> = {
   'horaro': 'horario', 'orario': 'horario', 'horarios': 'horario',
   'precyo': 'precio', 'precios': 'precio', 'presio': 'precio', 'kosto': 'costo', 'kuanto': 'cuanto',
   'resltados': 'resultados', 'resulados': 'resultados', 'reusltados': 'resultados',
+  'kontacto': 'contacto', 'cntacto': 'contacto', 'contact': 'contacto',
+  'encargdo': 'encargado', 'encargao': 'encargado',
+  'tlf': 'telefono', 'tlfn': 'telefono', 'tel': 'telefono', 'cel': 'celular', 'celu': 'celular',
+  'wsp': 'whatsapp', 'wasap': 'whatsapp', 'whastapp': 'whatsapp', 'watsapp': 'whatsapp',
+  'nro': 'numero', 'num': 'numero',
   'grcias': 'gracias', 'grasias': 'gracias', 'grx': 'gracias', 'grax': 'gracias', 'thx': 'gracias',
   'chaoo': 'chao', 'xao': 'chao', 'adios': 'adios', 'adio': 'adios', 'bye': 'adios'
 };
@@ -298,28 +305,119 @@ function detectarIdioma(texto: string): { esChino: boolean, esIngles: boolean, e
   return { esChino: tieneChino, esIngles: tieneIngles, esEspanol: tieneEspanol, esMixto, descripcion };
 }
 
-// ─── EXTRACCIÓN DE ENTIDADES (EXAMEN, FECHA, HORA) ─────────────────
+// ─── EXTRACCIÓN DE ENTIDADES (EXÁMENES MÚLTIPLES, FECHA, HORA) ───────
 
-function extraerExamen(texto: string): string | null {
+export const RECOMENDACIONES_EXAMENES: Record<string, string[]> = {
+  'Análisis de Sangre (Rutina)': [
+    '🌙 Ayuno de 8 horas (solo agua permitida).',
+    '🚫 Cero alcohol 24 a 48 horas antes.',
+    '🆔 Traer cédula de identidad y llegar 10 min antes.'
+  ],
+  'Análisis de Orina (Completo)': [
+    '🧴 Aseo genital previo con agua y jabón.',
+    '🧬 Chorro medio en frasco estéril (descartar primer chorro).',
+    '🚫 Cero alcohol 24h antes ni comidas con tintes (remolacha).',
+    '⏳ Entregar muestra antes de 2 horas de su emisión.'
+  ],
+  'Perfil Lipídico': [
+    '🌙 Ayuno estricto de 12 a 14 horas (solo agua).',
+    '🚫 Cero alcohol 72 horas (3 días) antes.',
+    '🍽️ Cena ligera sin grasas y sin ejercicio previo.'
+  ],
+  'Prueba de Tolerancia a la Glucosa': [
+    '🌙 Ayuno estricto de 8 a 10 horas.',
+    '🚫 Cero alcohol y evitar dulces 48h antes.',
+    '⏱️ Disponer de 2 horas en el laboratorio.'
+  ],
+  'Detección Molecular (PCR)': [
+    '🚫 No comer, beber ni lavarse dientes 2h antes.',
+    '😷 Uso obligatorio de barbijo o mascarilla.'
+  ]
+};
+
+export function obtenerRecomendacionesClinicas(examenStr?: string): string[] {
+  if (!examenStr) {
+    return [
+      '🌙 Ayuno general de 8 horas según la indicación de tu médico.',
+      '🚫 Evitar el consumo de bebidas alcohólicas de 24 a 48 horas antes.',
+      '🆔 Traer tu cédula de identidad y presentarte 10 minutos antes.'
+    ];
+  }
+
+  const partes = examenStr.split(' + ').map(e => e.trim());
+  const recomendaciones: string[] = [];
+  const vistas = new Set<string>();
+
+  for (const parte of partes) {
+    let recs: string[] | undefined = RECOMENDACIONES_EXAMENES[parte];
+    if (!recs) {
+      if (parte.includes('Sangre')) recs = RECOMENDACIONES_EXAMENES['Análisis de Sangre (Rutina)'];
+      else if (parte.includes('Orina')) recs = RECOMENDACIONES_EXAMENES['Análisis de Orina (Completo)'];
+      else if (parte.includes('Lipídico') || parte.includes('Lipidico')) recs = RECOMENDACIONES_EXAMENES['Perfil Lipídico'];
+      else if (parte.includes('Glucosa')) recs = RECOMENDACIONES_EXAMENES['Prueba de Tolerancia a la Glucosa'];
+      else if (parte.includes('PCR') || parte.includes('Molecular')) recs = RECOMENDACIONES_EXAMENES['Detección Molecular (PCR)'];
+    }
+
+    if (recs) {
+      for (const r of recs) {
+        if (!vistas.has(r)) {
+          vistas.add(r);
+          recomendaciones.push(r);
+        }
+      }
+    }
+  }
+
+  return recomendaciones.length > 0 ? recomendaciones : [
+    '🌙 Ayuno de 8 horas previo a la toma de muestra.',
+    '🚫 Evitar consumo de bebidas alcohólicas de 24 a 48 horas antes.',
+    '🆔 Traer cédula de identidad y acudir 10 minutos antes de tu turno.'
+  ];
+}
+
+/**
+ * Extrae todos los exámenes detectados en el texto para permitir citas de múltiples análisis.
+ * Ej: "analisis de sangre y orina" -> ["Análisis de Sangre (Rutina)", "Análisis de Orina (Completo)"]
+ */
+export function extraerExamenes(texto: string): string[] {
+  if (!texto) return [];
   const t = norm(texto);
-
-  // Buscar primero coincidencias exactas o en chino
-  const clavesOrdenadas = Object.keys(EXAMENES_CATALOGO).sort((a, b) => b.length - a.length);
-  for (const clave of clavesOrdenadas) {
-    if (texto.includes(clave) || t.includes(norm(clave))) {
-      return EXAMENES_CATALOGO[clave];
-    }
-  }
-
-  // Buscar con fuzzy match para palabras con letras mezcladas ("analsis de sngre", "perfl lpidico")
   const { textoNormalizado } = interpretarTextoConFuzzy(texto);
+
+  const encontrados = new Set<string>();
+
+  // 1. Detección por opciones numéricas: "1 y 3", "1, 2", "opcion 1 y opcion 2"
+  const matchSoloNumeros = t.match(/\b([1-5])\b/g);
+  if (matchSoloNumeros && /^(?:opcion(?:es)?|el|numero|num)?\s*[1-5](\s*(?:y|,|con|\+)\s*(?:opcion(?:es)?|el|numero|num)?\s*[1-5])*\s*$/i.test(t)) {
+    for (const numStr of matchSoloNumeros) {
+      const idx = parseInt(numStr) - 1;
+      if (EXAMENES_OFICIALES[idx]) {
+        encontrados.add(EXAMENES_OFICIALES[idx]);
+      }
+    }
+    if (encontrados.size > 0) return Array.from(encontrados);
+  }
+
+  // 2. Coincidencias de catálogo ordenadas de mayor a menor longitud
+  const clavesOrdenadas = Object.keys(EXAMENES_CATALOGO).sort((a, b) => b.length - a.length);
+
   for (const clave of clavesOrdenadas) {
-    if (textoNormalizado.includes(norm(clave))) {
-      return EXAMENES_CATALOGO[clave];
+    const examenOficial = EXAMENES_CATALOGO[clave];
+    if (encontrados.has(examenOficial)) continue;
+
+    const claveNorm = norm(clave);
+    if (texto.includes(clave) || t.includes(claveNorm) || textoNormalizado.includes(claveNorm)) {
+      encontrados.add(examenOficial);
     }
   }
 
-  return null;
+  return Array.from(encontrados);
+}
+
+export function extraerExamen(texto: string): string | null {
+  const lista = extraerExamenes(texto);
+  if (lista.length === 0) return null;
+  return lista.join(' + ');
 }
 
 function extraerFecha(texto: string, ahora: Date): string | null {
@@ -718,12 +816,20 @@ function esIntencionCita(texto: string, textoFuzzy: string, contexto?: ContextoS
     'quiero un', 'quiero una', 'necesito un', 'necesito una',
     'deseo hacerme', 'quisiera hacerme', 'hacerme un', 'hacerme una',
     'tomarme un', 'tomarme una', 'realizarme un', 'realizarme una',
-    'me gustaria hacerme', '想做', '想查', '要验', '要测'
+    'me gustaria hacerme', '想做', '想查', '要验', '要测', 'me hago', 'hacerme'
   ];
   const tieneDeseo = verbosDeseo.some(v => t.includes(v) || texto.includes(v));
   const examenEncontrado = extraerExamen(texto) || extraerExamen(textoFuzzy);
   if (tieneDeseo && examenEncontrado) {
     return true;
+  }
+
+  // Si el usuario directamente indica uno o varios análisis (ej: "analisis de sangre y orina", "sangre y orina")
+  if (examenEncontrado) {
+    const esPreguntaInformativa = /(cuanto|precio|costo|tarifa|para que sirve|que es|que mide|como me preparo|preparacion|recomendacion|ayuno|requisito|cuando sale|horario|donde|quien|contacto|telefono|celular|whatsapp)/i.test(t);
+    if (!esPreguntaInformativa) {
+      return true;
+    }
   }
 
   return false;
@@ -750,7 +856,11 @@ interface ReglaInteligente {
   patrones: RegExp[];
   palabrasChinas: string[];
   palabrasIngles: string[];
-  generarRespuesta: (idioma: ReturnType<typeof detectarIdioma>, nombre?: string) => {
+  generarRespuesta: (
+    idioma: ReturnType<typeof detectarIdioma>,
+    nombre?: string,
+    textoOriginal?: string
+  ) => {
     respuesta: string;
     razonamiento: string;
     accion?: 'PEDIR_EXAMEN' | 'PEDIR_FECHA' | 'PEDIR_HORA' | 'CONFIRMAR_CITA';
@@ -1040,20 +1150,58 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
   // 6. UBICACIÓN Y CONTACTO
   {
     categoria: 'UBICACION_CONTACTO',
-    palabrasClave: ['donde estan', 'direccion', 'donde queda', 'ubicacion', 'como llegar', 'telefono', 'whatsapp', 'contacto'],
-    patrones: [/(donde|direccion|ubicacion|como llegar|telefono|contacto|donde quedan)/],
-    palabrasChinas: ['地址', '在哪里', '位置', '怎么走', '电话', '联系方式'],
-    palabrasIngles: ['where are you', 'address', 'location', 'phone', 'contact'],
+    palabrasClave: ['donde estan', 'direccion', 'donde queda', 'ubicacion', 'como llegar', 'donde quedan'],
+    patrones: [/(donde|direccion|ubicacion|como llegar|donde quedan)/],
+    palabrasChinas: ['地址', '在哪里', '位置', '怎么走'],
+    palabrasIngles: ['where are you', 'address', 'location'],
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `Ubicación en chino.`,
-          respuesta: `📍 Estamos en las instalaciones centrales de **Lab. Gamboa**, de lunes a viernes de 07:30 a 18:00 hrs. ¿Te gustaría agendar tu cita?`
+          razonamiento: `Ubicación en chino con teléfono de contacto.`,
+          respuesta: `📍 Estamos en las instalaciones centrales de **Lab. Gamboa**, de lunes a viernes de 07:30 a 18:00 hrs. Teléfono / WhatsApp de contacto: **71772118**. ¿Te gustaría agendar tu cita?`
         };
       }
       return {
-        razonamiento: `Ubicación clara y directa.`,
-        respuesta: `📍 Estamos en las instalaciones centrales del **Laboratorio Clínico Gamboa**, atendiendo de lunes a viernes de 07:30 a 18:00 hrs. ¿Deseas agendar tu turno?`
+        razonamiento: `Ubicación clara y teléfono del laboratorio.`,
+        respuesta: `📍 Estamos ubicados en las instalaciones centrales del **Laboratorio Clínico Gamboa** (atención de lunes a viernes de 07:30 a 18:00 hrs). Para cualquier consulta puedes comunicarte al **71772118**. ¿Deseas agendar tu turno?`
+      };
+    }
+  },
+
+  // 6.1 CONTACTO DIRECTO DEL ENCARGADO / TELÉFONO / WHATSAPP
+  {
+    categoria: 'CONTACTO_ENCARGADO',
+    palabrasClave: [
+      'contacto del encargado', 'numero del encargado', 'telefono del encargado', 'celular del encargado',
+      'whatsapp del encargado', 'contacto encargado', 'numero encargado', 'encargado',
+      'contacto', 'telefono', 'celular', 'whatsapp', 'numero', 'llamar', 'escribir',
+      'cual es su numero', 'cual es el numero', 'pasame su numero', 'dame su numero',
+      'a que numero llamo', 'a que numero escribo', 'como me contacto', 'con quien me comunico',
+      'numero de contacto', 'telefono de contacto', 'comunicarme con el encargado',
+      'numero de telefono', 'numero de celular', 'numero de whatsapp'
+    ],
+    patrones: [
+      /(contacto|numero|telefono|celular|whatsapp|llamar|escribir|comunicar).*(encargado|laboratorio|doctor|administracion)?/i,
+      /(encargado|administracion).*(contacto|numero|telefono|celular|whatsapp)?/i,
+      /(cual\s+es\s+el\s+(numero|contacto|telefono|celular|whatsapp))/i
+    ],
+    palabrasChinas: ['负责人电话', '联系电话', '电话号码', '怎么联系', '微信', '负责人联系方式', '联系方式'],
+    palabrasIngles: ['manager contact', 'phone number', 'contact number', 'whatsapp', 'how to contact', 'manager phone'],
+    generarRespuesta: (idioma) => {
+      if (idioma.esChino) {
+        return {
+          razonamiento: `Contacto del encargado del laboratorio proporcionado con precisión.`,
+          respuesta: `📞 实验室负责人的联系电话是 **71772118**（支持电话与WhatsApp）。\n\nEl número de contacto del encargado del laboratorio es **71772118** (llamadas o WhatsApp). ¿Deseas agendar tu cita?`
+        };
+      }
+      const opciones = [
+        `📞 Puedes comunicarte directamente con el encargado del laboratorio al número **71772118** (disponible para llamadas y WhatsApp) para consultar costos exactos, exámenes especiales o cualquier duda. ¿Deseas que te ayude a programar una cita?`,
+        `📱 El número de contacto del encargado del laboratorio es **71772118** (llamadas o WhatsApp). Estamos atentos para ayudarte en lo que requieras. ¿Te gustaría agendar un turno clínico?`,
+        `👨‍💼 Para comunicarte con el encargado del laboratorio, puedes llamar o escribir al **71772118**. Con gusto resolveremos tus dudas o cotizaciones específicas. ¿Qué análisis necesitas realizarte?`
+      ];
+      return {
+        razonamiento: `Número de contacto oficial del encargado (71772118) informado de forma directa y amable.`,
+        respuesta: elegirVariacion(opciones)
       };
     }
   },
@@ -1068,17 +1216,17 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `Consulta de precios: se informa que los análisis clínicos tienen costos accesibles de 20 a 50 Bs. y se orienta a consultar al encargado para costos específicos.`,
-          respuesta: `💰 Los análisis clínicos tienen un costo aproximado de **20 a 50 Bs. (Bolivianos)**. Para consultar costos específicos y precisos según el estudio médico, por favor comunícate directamente con el encargado del laboratorio. ¿Te gustaría agendar una cita?`
+          razonamiento: `Consulta de precios: se informa que los análisis clínicos tienen costos accesibles de 20 a 50 Bs. y se orienta a consultar al encargado al 71772118.`,
+          respuesta: `💰 Los análisis clínicos tienen un costo aproximado de **20 a 50 Bs. (Bolivianos)**. Para consultar costos específicos y precisos según el estudio médico, por favor comunícate directamente con el encargado del laboratorio al **71772118**. ¿Te gustaría agendar una cita?`
         };
       }
       const opciones = [
-        `💰 Nuestros análisis clínicos tienen costos aproximados entre **20 y 50 Bs.** Para consultar costos precisos según el estudio específico que requieras, te sugerimos contactarte con el encargado o la administración del laboratorio. ¿Deseas agendar tu cita?`,
-        `💵 Manejamos tarifas muy accesibles: los costos de los análisis clínicos oscilan aproximadamente entre **20 y 50 Bs.** Para tarifas exactas y cotizaciones detalladas de cada prueba, puedes consultar directamente con el encargado del laboratorio. ¿Qué estudio necesitas realizarte?`,
-        `💡 El costo aproximado de los análisis clínicos es de **20 a 50 Bs.** Si deseas consultar el costo preciso de una prueba específica, por favor comunícate con el encargado del laboratorio. ¿Te gustaría reservar tu turno?`
+        `💰 Nuestros análisis clínicos tienen costos aproximados entre **20 y 50 Bs.** Para consultar costos precisos según el estudio específico que requieras, te sugerimos contactarte con el encargado al número **71772118** o con la administración del laboratorio. ¿Deseas agendar tu cita?`,
+        `💵 Manejamos tarifas muy accesibles: los costos de los análisis clínicos oscilan aproximadamente entre **20 y 50 Bs.** Para tarifas exactas y cotizaciones detalladas de cada prueba, puedes consultar directamente con el encargado al **71772118**. ¿Qué estudio necesitas realizarte?`,
+        `💡 El costo aproximado de los análisis clínicos es de **20 a 50 Bs.** Si deseas consultar el costo preciso de una prueba específica, por favor comunícate con el encargado del laboratorio al **71772118**. ¿Te gustaría reservar tu turno?`
       ];
       return {
-        razonamiento: `Costos en Bolivianos (20 a 50 Bs.) y recomendación de contactar al encargado para costos precisos.`,
+        razonamiento: `Costos en Bolivianos (20 a 50 Bs.) y recomendación de contactar al encargado al 71772118 para costos precisos.`,
         respuesta: elegirVariacion(opciones)
       };
     }
@@ -1120,17 +1268,133 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     }
   },
 
-  // 10. PREPARACIÓN GENERAL O ESPECÍFICA
+  // 10. PREPARACIÓN GENERAL O ESPECÍFICA (RECOMENDACIONES CLÍNICAS)
   {
     categoria: 'PREPARACION',
-    palabrasClave: ['como me preparo', 'preparacion', 'ayuno', 'instrucciones', 'requisitos', 'que debo hacer antes'],
-    patrones: [/(preparar|preparacion|ayuno|requisitos|instrucciones|antes del examen)/],
-    palabrasChinas: ['怎么准备', '注意什么', '要空腹吗', '准备工作', '禁食'],
-    palabrasIngles: ['how to prepare', 'preparation', 'fasting', 'instructions'],
-    generarRespuesta: (idioma) => {
+    palabrasClave: [
+      'como me preparo', 'preparacion', 'ayuno', 'instrucciones', 'requisitos', 'que debo hacer antes',
+      'recomendaciones', 'recomendacion', 'cuales son las recomendaciones', 'que recomendaciones',
+      'indicaciones', 'cuidados', 'que cuidados debo tener', 'cuidado debo tener', 'protocolo',
+      'como debo ir', 'como voy', 'que no debo comer', 'puedo desayunar', 'que debo llevar',
+      'puedo beber alcohol', 'puedo tomar alcohol', 'puedo tomar cerveza', 'tomar trago',
+      'cuantas horas de ayuno', 'horas de ayuno', 'recoleccion de orina', 'como recolecto la orina'
+    ],
+    patrones: [
+      /(preparar|preparacion|ayuno|requisitos|instrucciones|antes del examen|recomendaciones?|indicaciones?|cuidados?|protocolo|como voy|como debo ir)/i,
+      /(puedo\s+(tomar|beber)\s+(alcohol|cerveza|trago|licor))/i,
+      /(como\s+(recolecto|tomo|junto)\s+(la\s+)?orina)/i,
+      /(cuantas\s+horas\s+de\s+ayuno)/i
+    ],
+    palabrasChinas: ['怎么准备', '注意什么', '要空腹吗', '准备工作', '禁食', '化验须知', '喝酒了吗', '空腹几小时'],
+    palabrasIngles: ['how to prepare', 'preparation', 'fasting', 'instructions', 'requirements', 'recommendations'],
+    generarRespuesta: (idioma, nombre, textoOriginal) => {
+      // 1. Si el usuario pregunta por un examen específico o varios exámenes (ej: "recomendaciones de sangre y orina"):
+      const examenDetectado = extraerExamen(textoOriginal || '');
+      if (examenDetectado) {
+        const recsEspecificas = obtenerRecomendacionesClinicas(examenDetectado);
+        const lista = recsEspecificas.map(r => `• ${r}`).join('\n');
+        return {
+          razonamiento: `Recomendaciones previas breves y directas para [${examenDetectado}].`,
+          respuesta: `📋 **Previsiones previas para ${examenDetectado}:**\n\n${lista}\n\n¿Deseas programar una cita para este análisis?`,
+          opciones: ['📅 Sí, agendar cita', '⏰ Horarios de atención', '📞 Contactar encargado (71772118)']
+        };
+      }
+
+      if (idioma.esChino) {
+        return {
+          razonamiento: `Protocolos de preparación breves en chino.`,
+          respuesta: `📋 **化验前注意事项 / Previsiones para Análisis:**\n• **常规血检/血糖**: 空腹 8 小时 (可饮纯水)。\n• **血脂全套**: 严格空腹 12-14 小时，前 72 小时严禁饮酒。\n• **尿常规**: 晨起中段尿，并在 2 小时内送检。\n• **核酸 PCR**: 采样前 2 小时禁食饮，戴口罩。\n\n需要帮您预约检查吗？`
+        };
+      }
+
+      const respuestaGeneral = `📋 **Previsiones y recomendaciones para tus análisis:**\n\n` +
+        `• 🌙 **Ayuno**: 8h para sangre/glucosa y 12h para perfil lipídico (solo agua pura).\n` +
+        `• 🚫 **Cero alcohol**: 24h a 48h antes de sangre/orina (72h para perfil lipídico).\n` +
+        `• 🧴 **Muestra de orina**: Aseo previo, primera de la mañana y chorro medio en frasco estéril.\n` +
+        `• 😷 **PCR**: Sin comer ni lavarse dientes 2h antes (con barbijo).\n` +
+        `• 🆔 Traer cédula de identidad y llegar 10 min antes.\n\n` +
+        `¿Para qué estudio te gustaría agendar?`;
+
       return {
-        razonamiento: `Protocolos de preparación sintetizados.`,
-        respuesta: `📋 Para sangre y glucosa se requieren **8h de ayuno**; para perfil lipídico, **12h**. La orina debe ser la primera de la mañana. ¿Para qué examen te estás preparando?`
+        razonamiento: `Previsiones de preparación breves y directas.`,
+        respuesta: respuestaGeneral,
+        opciones: ['📅 Programar cita', '🧪 Ver exámenes disponibles', '📞 Contactar encargado (71772118)']
+      };
+    }
+  },
+
+  // 10.1 INFORMACIÓN CLÍNICA DETALLADA DE EXÁMENES (¿QUÉ ES Y PARA QUÉ SIRVE?)
+  {
+    categoria: 'INFORMACION_EXAMENES_CATALOGO',
+    palabrasClave: [
+      'para que sirve el hemograma', 'que es el hemograma', 'que mide el hemograma', 'para que sirve el analisis de sangre',
+      'que evalua el analisis de sangre', 'para que sirve el perfil lipidico', 'que es el perfil lipidico', 'colesterol y trigliceridos',
+      'para que sirve el examen de orina', 'que mide el examen de orina', 'infeccion de orina', 'infeccion urinaria',
+      'para que sirve la glucosa', 'tolerancia a la glucosa', 'prueba de glucosa', 'prueba de tolerancia', 'ptgo', 'diabetes',
+      'para que sirve el pcr', 'deteccion molecular', 'prueba de pcr', 'prueba molecular',
+      'prueba de embarazo', 'analisis de embarazo', 'test de embarazo', 'hcg', 'hacen prueba de embarazo',
+      'tiroides', 'tsh', 'acido urico', 'creatinina', 'urea', 'transaminasas',
+      'que examenes hacen', 'cuales examenes hacen', 'que pruebas realizan', 'catalogo de analisis', 'lista de examenes',
+      'que tipos de analisis tienen', 'que analisis tienen'
+    ],
+    patrones: [
+      /(para\s+que\s+sirve|que\s+es|que\s+mide|que\s+evalua)\s+(el\s+|la\s+)?(hemograma|analisis\s+de\s+sangre|perfil\s+lipidico|orina|glucosa|pcr|embarazo|tiroides)/i,
+      /(hacen|realizan|tienen)\s+(prueba\s+de\s+|analisis\s+de\s+)?(embarazo|tiroides|pcr|orina|sangre|glucosa|covid)/i,
+      /(que|cuales)\s+(examenes|analisis|pruebas|estudios)\s+(hacen|realizan|tienen|ofrecen)/i
+    ],
+    palabrasChinas: ['化验项目介绍', '血常规检查什么', '尿常规检查什么', '血脂查什么', '血糖检查', '孕检', '能查怀孕吗'],
+    palabrasIngles: ['what is cbc', 'what does urine test measure', 'lipid profile purpose', 'glucose tolerance test', 'pregnancy test', 'available lab tests'],
+    generarRespuesta: (idioma, nombre, textoOriginal) => {
+      const t = norm(textoOriginal || '');
+
+      if (t.includes('embarazo') || t.includes('hcg')) {
+        return {
+          razonamiento: 'Información clínica sobre prueba de embarazo (hCG).',
+          respuesta: '🤰 Realizamos **Pruebas de Embarazo en Sangre (Fracción Beta hCG cuantitativa y cualitativa)**, con máxima precisión diagnóstica desde etapas muy tempranas. Los resultados se entregan el mismo día. Costo aprox.: 20 a 50 Bs. ¿Deseas agendar tu turno?',
+          opciones: ['📅 Agendar cita', '📞 Contactar encargado (71772118)']
+        };
+      }
+      if (t.includes('sangre') || t.includes('hemograma') || t.includes('biometria')) {
+        return {
+          razonamiento: 'Información sobre Análisis de Sangre / Hemograma.',
+          respuesta: '🩸 El **Hemograma / Análisis de Sangre** evalúa glóbulos rojos (diagnóstico de anemia), glóbulos blancos (defensas e infecciones) y plaquetas (coagulación). Requiere 8h de ayuno y abstinencia de alcohol. ¿Te gustaría agendarlo?',
+          opciones: ['📅 Agendar Análisis de Sangre', '📋 Ver preparación']
+        };
+      }
+      if (t.includes('orina') || t.includes('urinalisis')) {
+        return {
+          razonamiento: 'Información sobre Análisis de Orina.',
+          respuesta: '🧴 El **Análisis de Orina Completo** examina función renal, presencia de infecciones bacterianas, proteínas, cristales y glucosa. Requiere recolectar el chorro medio de la primera orina de la mañana en frasco estéril. ¿Deseas programar tu turno?',
+          opciones: ['📅 Agendar Análisis de Orina', '📋 Ver preparación']
+        };
+      }
+      if (t.includes('lipid') || t.includes('colesterol') || t.includes('triglic')) {
+        return {
+          razonamiento: 'Información sobre Perfil Lipídico.',
+          respuesta: '🧬 El **Perfil Lipídico** mide colesterol total, HDL ("bueno"), LDL ("malo") y triglicéridos para evaluar la salud cardiovascular y metabólica. Requiere 12 a 14h de ayuno estricto y cero alcohol 72h antes. ¿Deseas agendarlo?',
+          opciones: ['📅 Agendar Perfil Lipídico', '📋 Ver preparación']
+        };
+      }
+      if (t.includes('glucosa') || t.includes('azucar') || t.includes('tolerancia') || t.includes('diabetes')) {
+        return {
+          razonamiento: 'Información sobre Prueba de Tolerancia a la Glucosa.',
+          respuesta: '🍬 La **Prueba de Tolerancia a la Glucosa (PTGO)** evalúa la respuesta del cuerpo al azúcar para detectar diabetes mellitus, prediabetes o diabetes gestacional. Requiere 8 a 10h de ayuno y 2 horas de disponibilidad en el laboratorio. ¿Deseas agendarla?',
+          opciones: ['📅 Agendar Glucosa', '📋 Ver preparación']
+        };
+      }
+      if (t.includes('pcr') || t.includes('molecular') || t.includes('covid')) {
+        return {
+          razonamiento: 'Información sobre Detección Molecular (PCR).',
+          respuesta: '🔬 La **Detección Molecular (PCR)** detecta material genético patógeno (COVID-19 y agentes respiratorios) con máxima especificidad diagnóstica. Resultados en 24 a 48h. ¿Te gustaría agendar una toma de muestra?',
+          opciones: ['📅 Agendar PCR Molecular', '📋 Ver preparación']
+        };
+      }
+
+      // Catálogo general de análisis clínicos
+      return {
+        razonamiento: 'Catálogo de análisis clínicos y objetivos generales del laboratorio.',
+        respuesta: '🔬 En el **Laboratorio Gamboa** realizamos una amplia variedad de análisis clínicos:\n• 🩸 **Análisis de Sangre**: Anemia, defensas e infecciones.\n• 🧴 **Análisis de Orina**: Infecciones y salud renal.\n• 🧬 **Perfil Lipídico**: Colesterol total, HDL, LDL y triglicéridos.\n• 🍬 **Tolerancia a Glucosa**: Control de diabetes y glicemia.\n• 🔬 **Detección Molecular (PCR)**: Detección viral de alta precisión.\n• 🤰 **Pruebas de Embarazo (hCG)** y bioquímica clínica.\n\nTarifas accesibles de **20 a 50 Bs.** ¿Cuál te gustaría programar?',
+        opciones: EXAMENES_OFICIALES
       };
     }
   },
@@ -1196,8 +1460,8 @@ function manejarFlujoCita(
     contexto.temaActual = undefined;
     contexto.citaSlots = undefined;
     return {
-      pensamiento: 'Paso 1 (Comprensión): El usuario solicitó cancelar el proceso de agendamiento. Reinicio los datos temporales.',
-      respuesta: 'He cancelado el proceso de cita sin inconvenientes. ¿En qué otra cosa te puedo orientar hoy? 😊',
+      pensamiento: 'El usuario canceló el agendamiento.',
+      respuesta: 'Cita cancelada. ¿Te ayudo con algo más? 😊',
       intencion: 'CANCELAR_CITA'
     };
   }
@@ -1220,26 +1484,94 @@ function manejarFlujoCita(
   contexto.temaActual = 'cita';
   contexto.ultimaIntencion = 'programar_cita';
 
-  if (examen) slots.examen = examen;
+  if (examen) {
+    if (slots.examen && slots.examen !== examen) {
+      const quiereReemplazar = /cambi(ar|o|a)|en\s+vez\s+de|sustitui?r|solo|solamente|unicamente|cancel(ar|a)\s+el\s+anterior/i.test(norm(mensajeOriginal));
+      if (quiereReemplazar) {
+        slots.examen = examen;
+      } else {
+        const actuales = slots.examen.split(' + ').map(e => e.trim());
+        const nuevos = examen.split(' + ').map(e => e.trim());
+        const combinados = Array.from(new Set([...actuales, ...nuevos]));
+        slots.examen = combinados.join(' + ');
+      }
+    } else {
+      slots.examen = examen;
+    }
+  }
 
   const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
   const pad = (n: number) => n.toString().padStart(2, '0');
   const horaActualStr = `${pad(ahora.getHours())}:${pad(ahora.getMinutes())}`;
+  const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
+  const minLimiteMuestrasAyuno = 11 * 60 + 30; // 11:30 — límite para toma de muestras en ayunas
+  const minMediodia = 12 * 60; // 12:00
+  const minCierre = 18 * 60;   // 18:00
 
   // Validaciones de fecha
   if (fecha) {
     if (fecha < hoyStr) {
       return {
-        pensamiento: `Paso 1 (Comprensión): El usuario solicitó la fecha ${fecha}, la cual ya pasó en relación a hoy (${hoyStr}). Rechazo de forma educada y pido una fecha válida.`,
-        respuesta: idioma.esChino
-          ? `⚠️ 该日期已经过去。请选择今天或未来的日期：\n⚠️ Esa fecha ya pasó. Por favor indica una fecha de hoy en adelante:`
-          : `⚠️ Esa fecha ya pasó. Por favor indícame una fecha a partir de hoy en adelante:`,
+        pensamiento: `La fecha ${fecha} ya pasó (hoy es ${hoyStr}). Pido una fecha válida.`,
+        respuesta: `⚠️ Esa fecha ya pasó. Indícame una fecha de hoy en adelante:`,
         intencion: 'programar_cita',
         accion: 'PEDIR_FECHA',
         citaSlots: { ...slots },
       };
     }
+
+    // ── VALIDACIÓN CLÍNICA: Si es hoy y ya pasó el horario de atención ──
+    if (fecha === hoyStr && minActuales >= minCierre) {
+      const mañana = new Date(ahora);
+      mañana.setDate(mañana.getDate() + 1);
+      const mañanaStr = `${mañana.getFullYear()}-${String(mañana.getMonth() + 1).padStart(2, '0')}-${String(mañana.getDate()).padStart(2, '0')}`;
+      return {
+        pensamiento: `Son las ${horaActualStr} y el laboratorio cierra a las 18:00. No se puede agendar para hoy. Sugiero mañana.`,
+        respuesta: `⚠️ Ya pasó el horario de atención de hoy (**18:00 hrs**). No es posible agendar para hoy.\n\n¿Te gustaría agendar para **mañana (${formatearFechaLegible(mañanaStr)})**?`,
+        intencion: 'programar_cita',
+        accion: 'PEDIR_FECHA',
+        citaSlots: { ...slots },
+        opciones: [`📅 Sí, para mañana`, `📅 Elegir otra fecha`],
+      };
+    }
+
+    // ── VALIDACIÓN CLÍNICA CLAVE: Exámenes que requieren ayuno después de las 12:00 ──
+    const requiereAyuno = slots.examen ? /sangre|lipid|lipíd|lipidico|glucosa|ayuno|hemograma|biometr/i.test(slots.examen) : false;
+    if (fecha === hoyStr && requiereAyuno && minActuales >= minMediodia) {
+      const mañana = new Date(ahora);
+      mañana.setDate(mañana.getDate() + 1);
+      const mañanaStr = `${mañana.getFullYear()}-${String(mañana.getMonth() + 1).padStart(2, '0')}-${String(mañana.getDate()).padStart(2, '0')}`;
+      return {
+        pensamiento: `Son las ${horaActualStr}. El examen "${slots.examen}" requiere ayuno de 8+ horas y la toma de muestras en ayunas es solo hasta las 11:30. Después del mediodía los resultados serían incorrectos clínicamente. Rechazo y sugiero mañana temprano.`,
+        respuesta: `⚠️ **No es posible agendar "${slots.examen}" para hoy.**\n\nEste examen requiere **ayuno** y la toma de muestras en ayunas es solo hasta las **11:30 hrs**. Después de esa hora los resultados clínicos saldrían alterados e incorrectos.\n\nTe recomiendo agendar para **mañana temprano** (07:30 - 11:30) en ayunas.`,
+        intencion: 'programar_cita',
+        accion: 'PEDIR_FECHA',
+        citaSlots: { ...slots, fecha: undefined },
+        opciones: [`📅 Agendar para mañana`, `📅 Elegir otra fecha`],
+      };
+    }
+
     slots.fecha = fecha;
+  }
+
+  // ── VALIDACIÓN CLÍNICA AL ASIGNAR FECHA "HOY" sin hora aún ──
+  // Si ya tiene examen de ayuno + fecha = hoy + es después del mediodía, rechazar antes de pedir hora
+  if (slots.fecha === hoyStr && !slots.hora && slots.examen) {
+    const requiereAyuno = /sangre|lipid|lipíd|lipidico|glucosa|ayuno|hemograma|biometr/i.test(slots.examen);
+    if (requiereAyuno && minActuales >= minMediodia) {
+      const mañana = new Date(ahora);
+      mañana.setDate(mañana.getDate() + 1);
+      const mañanaStr = `${mañana.getFullYear()}-${String(mañana.getMonth() + 1).padStart(2, '0')}-${String(mañana.getDate()).padStart(2, '0')}`;
+      slots.fecha = undefined; // Limpiar fecha inválida
+      return {
+        pensamiento: `El paciente eligió hoy para "${slots.examen}" que requiere ayuno, pero ya son las ${horaActualStr}. La ventana de toma de muestras en ayunas cierra a las 11:30. Los resultados saldrían incorrectos.`,
+        respuesta: `⚠️ **No es posible realizar "${slots.examen}" hoy.**\n\nYa pasó el horario de toma de muestras en ayunas (**hasta 11:30 hrs**) y los resultados no serían confiables.\n\n¿Agendamos para **mañana temprano** en ayunas?`,
+        intencion: 'programar_cita',
+        accion: 'PEDIR_FECHA',
+        citaSlots: { ...slots },
+        opciones: [`📅 Sí, para mañana`, `📅 Elegir otra fecha`],
+      };
+    }
   }
 
   // Validaciones de hora
@@ -1247,12 +1579,11 @@ function manejarFlujoCita(
     const [h, m] = hora.split(':').map(Number);
     const minTotal = h * 60 + m;
     const minApertura = 7 * 60 + 30; // 07:30
-    const minCierre = 18 * 60;       // 18:00
 
     if (minTotal < minApertura || minTotal > minCierre) {
       return {
-        pensamiento: `Paso 1 (Comprensión clínica): La hora ingresada (${hora}) está fuera del horario de laboratorio (07:30 a 18:00). Razono sugiriendo un horario dentro del intervalo hábil.`,
-        respuesta: `⚠️ La hora **${hora}** se encuentra fuera de nuestro horario de atención (**07:30 a 18:00 hrs**).\n\nTe sugiero agendar a las **08:00** o **09:30**. ¿A qué hora prefieres asistir?`,
+        pensamiento: `La hora ${hora} está fuera del horario de atención (07:30-18:00). Sugiero horarios válidos.`,
+        respuesta: `⚠️ La hora **${hora}** está fuera de nuestro horario (**07:30 a 18:00 hrs**). ¿A qué hora prefieres?`,
         intencion: 'programar_cita',
         accion: 'PEDIR_HORA',
         citaSlots: { ...slots },
@@ -1261,12 +1592,27 @@ function manejarFlujoCita(
 
     if (slots.fecha === hoyStr && hora <= horaActualStr) {
       return {
-        pensamiento: `Paso 1: La hora ${hora} ya transcurrió en el día de hoy. Solicito un horario posterior.`,
-        respuesta: `⚠️ La hora **${hora}** ya pasó el día de hoy. Por favor elige un horario posterior (hasta las 18:00):`,
+        pensamiento: `La hora ${hora} ya pasó hoy (son las ${horaActualStr}). Pido un horario posterior.`,
+        respuesta: `⚠️ La hora **${hora}** ya pasó. Elige un horario posterior a las **${horaActualStr}**:`,
         intencion: 'programar_cita',
         accion: 'PEDIR_HORA',
         citaSlots: { ...slots },
       };
+    }
+
+    // ── VALIDACIÓN CLÍNICA: hora solicitada para hoy pero el examen requiere ayuno y la hora > 11:30 ──
+    if (slots.fecha === hoyStr && slots.examen) {
+      const requiereAyuno = /sangre|lipid|lipíd|lipidico|glucosa|ayuno|hemograma|biometr/i.test(slots.examen);
+      if (requiereAyuno && minTotal > minLimiteMuestrasAyuno) {
+        return {
+          pensamiento: `El paciente quiere "${slots.examen}" hoy a las ${hora}, pero este examen requiere ayuno y solo se toman muestras hasta las 11:30. Los resultados saldrían incorrectos.`,
+          respuesta: `⚠️ **No puedo registrar esa cita.** El examen "${slots.examen}" requiere ayuno y la toma de muestras es solo hasta las **11:30 hrs**. Después de esa hora los resultados serían incorrectos.\n\nTe sugiero agendar **mañana entre 07:30 y 11:30** en ayunas.`,
+          intencion: 'programar_cita',
+          accion: 'PEDIR_FECHA',
+          citaSlots: { ...slots, hora: undefined, fecha: undefined },
+          opciones: [`📅 Agendar para mañana`, `📅 Elegir otra fecha`],
+        };
+      }
     }
 
     slots.hora = hora;
@@ -1287,12 +1633,12 @@ function manejarFlujoCita(
 
   // Identificar qué slot falta
   if (!slots.examen) {
-    partesPensamiento.push(`Paso 4 (Estrategia): Falta el examen clínico. Solicito la selección del estudio ofreciendo el catálogo.`);
+    partesPensamiento.push(`Falta el examen. Presento el catálogo.`);
     return {
       pensamiento: partesPensamiento.join(' '),
       respuesta: idioma.esChino
-        ? `好的！请问您需要预约哪项化验项目？\n\n¡Perfecto! ¿Qué análisis clínico necesitas realizarte?`
-        : `¡Con gusto te ayudo a agendar tu cita! 🩺\n\n¿Qué tipo de análisis clínico necesitas realizarte?`,
+        ? `好的！请问您需要预约哪项化验项目？\n\n¿Qué análisis necesitas?`
+        : `¿Qué análisis necesitas realizarte?`,
       intencion: 'programar_cita',
       accion: 'PEDIR_EXAMEN',
       citaSlots: { ...slots },
@@ -1301,12 +1647,12 @@ function manejarFlujoCita(
   }
 
   if (!slots.fecha) {
-    partesPensamiento.push(`Paso 4 (Estrategia): Se tiene el examen (${slots.examen}). Ahora solicito la fecha para la toma de muestra.`);
+    partesPensamiento.push(`Examen registrado: ${slots.examen}. Solicito fecha.`);
     return {
       pensamiento: partesPensamiento.join(' '),
       respuesta: idioma.esChino
-        ? `已记录项目：**${slots.examen}**。\n\n请问您希望哪一天前来检查？（如：今天、明天、周五）\n\nEntendido para **${slots.examen}**. ¿Para qué fecha deseas programar tu cita?`
-        : `Entendido, agendaremos **${slots.examen}**.\n\n¿Para qué fecha te gustaría venir? (Puedes escribir "hoy", "mañana", "el viernes" o seleccionar en el calendario)`,
+        ? `已记录：**${slots.examen}**。请问哪天来？\n\nAnotado: **${slots.examen}**. ¿Para qué fecha?`
+        : `Anotado: **${slots.examen}**. ¿Para qué fecha?`,
       intencion: 'programar_cita',
       accion: 'PEDIR_FECHA',
       citaSlots: { ...slots },
@@ -1314,10 +1660,14 @@ function manejarFlujoCita(
   }
 
   if (!slots.hora) {
-    partesPensamiento.push(`Paso 4 (Estrategia): Examen y fecha fijados. Solicito el horario recordando el intervalo matutino si requiere ayuno.`);
+    partesPensamiento.push(`Examen y fecha listos. Solicito hora.`);
+    const requiereAyunoHora = /sangre|lipid|lipíd|lipidico|glucosa|ayuno|hemograma|biometr/i.test(slots.examen);
+    const horarioInfo = requiereAyunoHora
+      ? `Este examen requiere **ayuno**, agenda entre **07:30 y 11:30 hrs**.`
+      : `Atendemos de **07:30 a 18:00 hrs**.`;
     return {
       pensamiento: partesPensamiento.join(' '),
-      respuesta: `¡Anotado! **${slots.examen}** para el **${formatearFechaLegible(slots.fecha)}**.\n\n¿En qué horario te resulta más cómodo asistir? (Atendemos de **07:30 a 18:00 hrs**)`,
+      respuesta: `**${slots.examen}** para el **${formatearFechaLegible(slots.fecha)}**. ${horarioInfo}\n\n¿A qué hora?`,
       intencion: 'programar_cita',
       accion: 'PEDIR_HORA',
       citaSlots: { ...slots },
@@ -1325,8 +1675,11 @@ function manejarFlujoCita(
   }
 
   // Todos los slots listos
-  partesPensamiento.push(`Paso 4 (Confirmación): Todos los datos están completos y validados clínicamente. Presento el resumen final para confirmación.`);
-  const resumen = `📋 **Resumen de tu Cita Médica:**\n\n🔬 **Estudio:** ${slots.examen}\n📅 **Fecha:** ${formatearFechaLegible(slots.fecha)}\n🕐 **Hora:** ${slots.hora} hrs\n👨‍⚕️ **Especialista:** Dr. Armando Gamboa Orellana\n\n¿Los datos están correctos? Presiona confirmar para registrarla en el sistema.`;
+  partesPensamiento.push(`Datos completos. Presento resumen para confirmación.`);
+  
+  const recsClinicas = obtenerRecomendacionesClinicas(slots.examen);
+  slots.recomendaciones = recsClinicas;
+  const resumen = `📋 **Resumen de tu cita:**\n\n🔬 ${slots.examen}\n📅 ${formatearFechaLegible(slots.fecha)}\n🕐 ${slots.hora} hrs\n\n¿Confirmamos?`;
 
   return {
     pensamiento: partesPensamiento.join(' '),
@@ -1334,6 +1687,7 @@ function manejarFlujoCita(
     intencion: 'programar_cita',
     accion: 'CONFIRMAR_CITA',
     citaSlots: { ...slots },
+    recomendaciones: recsClinicas,
   };
 }
 
@@ -1397,6 +1751,11 @@ function manejarConversacionAbierta(
       puntaje += 35;
     }
 
+    // Prioridad muy alta a consultas de contacto del encargado o teléfono directo
+    if (regla.categoria === 'CONTACTO_ENCARGADO' && puntaje > 0) {
+      puntaje += 35;
+    }
+
     if (puntaje > maxPuntaje) {
       maxPuntaje = puntaje;
       mejorRegla = regla;
@@ -1416,7 +1775,7 @@ function manejarConversacionAbierta(
 
   if (mejorRegla && maxPuntaje >= 5) {
     pensamientoPasos.push(`Paso 3 (Comprensión semántica): Intención clasificada como [${mejorRegla.categoria}] (afinidad: ${maxPuntaje} pts).`);
-    const resp = mejorRegla.generarRespuesta(idioma, contexto.nombre);
+    const resp = mejorRegla.generarRespuesta(idioma, contexto.nombre, mensajeOriginal);
     pensamientoPasos.push(`Paso 4 (Razonamiento contextual): ${resp.razonamiento}`);
 
     contexto.ultimaIntencion = mejorRegla.categoria;
