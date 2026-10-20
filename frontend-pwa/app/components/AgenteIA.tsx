@@ -240,7 +240,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     if (!dragInfo.current.isDragging || !dragRef.current?.hasPointerCapture(e.pointerId)) return;
     const dx = e.clientX - dragInfo.current.startX;
     const dy = e.clientY - dragInfo.current.startY;
-    
+
     // Tolerancia de 15px para evitar clicks accidentales como drag (especial para trackpads de laptop)
     if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
       dragInfo.current.moved = true;
@@ -375,7 +375,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     try {
       const res = await fetchAuth(`${API_URL}/citas`);
       const todas = await res.json();
-      
+
       const ocupadas: number[] = todas
         .filter((c: any) => c.fecha === fecha && c.estado?.toLowerCase() !== "cancelada")
         .map((c: any) => {
@@ -392,17 +392,17 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       const examenesAyuno = ["Análisis de Sangre (Rutina)", "Perfil Lipídico", "Prueba de Tolerancia a la Glucosa"];
       const requiereAyuno = examen ? examenesAyuno.includes(examen) : false;
 
-      const rangos = requiereAyuno 
+      const rangos = requiereAyuno
         ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }] // Solo mañana por ayuno
         : [
-            { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
-            { inicio: 14 * 60, fin: 18 * 60 }
-          ];
+          { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
+          { inicio: 14 * 60, fin: 18 * 60 }
+        ];
 
       for (const rango of rangos) {
         for (let min = rango.inicio; min <= rango.fin; min += 30) {
           if (esHoy && min < minActual) continue;
-          
+
           const conflicto = ocupadas.some((o) => Math.abs(o - min) < 30);
           if (!conflicto) {
             const h = Math.floor(min / 60).toString().padStart(2, "0");
@@ -688,14 +688,14 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         } else if (data.accion === "PEDIR_HORA") {
           setFlujo("esperando_hora");
           if (data.citaSlots?.fecha) {
-             const libres = await calcularHorariosLibres(data.citaSlots.fecha, data.citaSlots.examen);
-             setHorariosDisp(libres);
-             push(agente(data.respuesta, "opciones", {
-               pensamiento: data.pensamiento || "",
-               opciones: libres.length > 0 ? libres : ["No hay horarios libres para este examen"]
-             }));
+            const libres = await calcularHorariosLibres(data.citaSlots.fecha, data.citaSlots.examen);
+            setHorariosDisp(libres);
+            push(agente(data.respuesta, "opciones", {
+              pensamiento: data.pensamiento || "",
+              opciones: libres.length > 0 ? libres : ["No hay horarios libres para este examen"]
+            }));
           } else {
-             push(agente(data.respuesta, "normal", { pensamiento: data.pensamiento || "" }));
+            push(agente(data.respuesta, "normal", { pensamiento: data.pensamiento || "" }));
           }
         } else if (data.accion === "CONFIRMAR_CITA") {
           setFlujo("confirmando");
@@ -764,7 +764,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   return createPortal(
     <>
       {abierto && (
-      <div
+        <div
           className="
             fixed z-50 flex flex-col overflow-hidden border border-slate-700/80
             /* MÓVIL: pantalla completa */
@@ -954,13 +954,12 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
                       <div key={log._id} className="p-4 hover:bg-slate-800/50 transition-colors">
                         <div className="flex justify-between items-start mb-2">
                           <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                              log.resultado === "exito"
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${log.resultado === "exito"
                                 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                 : log.resultado === "sin_citas"
-                                ? "bg-slate-500/10 text-slate-400 border border-slate-500/20"
-                                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                            }`}
+                                  ? "bg-slate-500/10 text-slate-400 border border-slate-500/20"
+                                  : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                              }`}
                           >
                             {log.accion}
                           </span>
@@ -1056,15 +1055,14 @@ function BurbujaMensaje({
 
         {/* Burbuja de texto */}
         <div
-          className={`rounded-2xl px-3.5 py-2.5 ${
-            esUsuario
+          className={`rounded-2xl px-3.5 py-2.5 ${esUsuario
               ? "bg-gradient-to-br from-cyan-600 to-cyan-700 text-slate-900 rounded-tr-sm"
               : msg.tipo === "exito"
-              ? "bg-emerald-600/15 border border-emerald-500/30 text-slate-200 rounded-tl-sm"
-              : msg.tipo === "error"
-              ? "bg-rose-600/15 border border-rose-500/30 text-slate-200 rounded-tl-sm"
-              : "bg-slate-800/90 border border-slate-700/60 text-slate-200 rounded-tl-sm"
-          }`}
+                ? "bg-emerald-600/15 border border-emerald-500/30 text-slate-200 rounded-tl-sm"
+                : msg.tipo === "error"
+                  ? "bg-rose-600/15 border border-rose-500/30 text-slate-200 rounded-tl-sm"
+                  : "bg-slate-800/90 border border-slate-700/60 text-slate-200 rounded-tl-sm"
+            }`}
         >
           {esUsuario ? (
             <p className="text-xs leading-relaxed">{msg.texto}</p>

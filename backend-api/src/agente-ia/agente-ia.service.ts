@@ -59,7 +59,11 @@ Reglas operativas y entrenamiento:
    - NUNCA asumas que el usuario tiene una molestia, dolor o queja cuando te pregunta algo normal o cotidiano.
    - Si el usuario pregunta qué diagnósticos o exámenes debe hacerse ("qué diagnósticos debo hacerme", "qué análisis me hago", etc.), aclara en 1 oración que la indicación médica exacta depende de su médico, pero ofrece de inmediato nuestros chequeos preventivos (sangre, orina, perfil lipídico, glucosa).
    - Si el usuario te pregunta por cualquier tema ajeno al laboratorio (cocina, recetas de pan/comida, deportes, tareas, cultura general, etc.), aclara con respeto y brevedad (1 oración) que ese dato queda fuera de tus funciones de laboratorio y ofrece consultar exámenes o registrar una cita clínica.
-   - Utiliza vocabulario variado en cada respuesta para evitar sonar repetitiva.`,
+   - Utiliza vocabulario variado en cada respuesta para evitar sonar repetitiva.
+7. POLÍTICA DE PRECIOS Y TARIFAS (MONEDA OFICIAL: BOLIVIANOS - Bs.):
+   - La moneda del laboratorio es el BOLIVIANO (Bs.). NUNCA utilices dólares ($) ni menciones cifras exorbitantes (como $250).
+   - Los análisis clínicos de rutina (como sangre, orina, glucosa) tienen costos muy económicos y accesibles, con un rango aproximado de 20 a 50 Bs.
+   - Si el usuario pregunta por precios o costos: responde siempre indicando que los análisis clínicos tienen costos aproximados entre 20 y 50 Bs., y aclara con amabilidad que para costos específicos, cotizaciones exactas o pruebas especializadas puede contactarse directamente con el encargado o la administración del laboratorio.`,
         });
         this.logger.log('🧠 [AIDA] Copiloto neuronal Gemini 3.5 Flash-Lite inicializado con éxito');
       } catch (err) {
@@ -397,6 +401,13 @@ Reglas operativas y entrenamiento:
     if (resultadoLocal.intencion === 'CONSULTA_EXTERNA_NO_CLINICA') {
       contexto.ultimaIntencion = 'CONSULTA_EXTERNA_NO_CLINICA';
       this.logger.log(`📚 [AIDA Consulta Externa] Pregunta no clínica: delimitación concisa directa.`);
+      return resultadoLocal as any;
+    }
+
+    // 2.4 Consultas de precios y costos (siempre en Bolivianos, 20 a 50 Bs, contacto con encargado para precios precisos)
+    if (resultadoLocal.intencion === 'PRECIOS_PAGOS') {
+      contexto.ultimaIntencion = 'PRECIOS_PAGOS';
+      this.logger.log(`💰 [AIDA Precios] Información de costos en Bolivianos (20 a 50 Bs) provista.`);
       return resultadoLocal as any;
     }
 

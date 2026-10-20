@@ -280,10 +280,10 @@ function interpretarTextoConFuzzy(texto: string): { textoNormalizado: string, co
 function detectarIdioma(texto: string): { esChino: boolean, esIngles: boolean, esEspanol: boolean, esMixto: boolean, descripcion: string } {
   const tieneChino = /[\u4e00-\u9fa5]/.test(texto);
   const textoMinuscula = texto.toLowerCase();
-  
+
   const tokensIngles = ['hello', 'hi', 'blood', 'test', 'appointment', 'doctor', 'hours', 'price', 'cost', 'results', 'urine', 'fasting', 'please', 'thank', 'thanks'];
   const tieneIngles = tokensIngles.some(w => new RegExp(`\\b${w}\\b`).test(textoMinuscula));
-  
+
   const tokensEspanol = ['hola', 'buenos', 'cita', 'sangre', 'orina', 'doctor', 'horario', 'precio', 'gracias', 'quiero', 'cuanto', 'como'];
   const tieneEspanol = tokensEspanol.some(w => new RegExp(`\\b${w}\\b`).test(textoMinuscula)) || (!tieneChino && !tieneIngles);
 
@@ -331,26 +331,96 @@ function extraerFecha(texto: string, ahora: Date): string | null {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
-  // Español, Chino e Inglés: hoy / 今天 / today
+  // 1. Relativos: hoy / 今天 / today
   if (/\bhoy\b/.test(t) || texto.includes('今天') || /\btoday\b/.test(t)) {
     return formatFecha(hoy);
   }
 
-  // mañana / 明天 / tomorrow
-  if (/\bmanana\b/.test(t) || texto.includes('明天') || /\btomorrow\b/.test(t)) {
-    const d = new Date(hoy);
-    d.setDate(d.getDate() + 1);
-    return formatFecha(d);
-  }
-
-  // pasado mañana / 后天 / day after tomorrow
+  // 2. pasado mañana / 后天 / day after tomorrow (evaluar antes de "mañana")
   if (/pasado\s*manana/.test(t) || texto.includes('后天')) {
     const d = new Date(hoy);
     d.setDate(d.getDate() + 2);
     return formatFecha(d);
   }
 
-  // Días de la semana en español, chino e inglés
+  // 3. mañana / 明天 / tomorrow
+  if (/\bmanana\b/.test(t) || texto.includes('明天') || /\btomorrow\b/.test(t)) {
+    const d = new Date(hoy);
+    d.setDate(d.getDate() + 1);
+    return formatFecha(d);
+  }
+
+  // 4. en N días
+  const matchEnDias = t.match(/en\s+(\d+|dos|tres|cuatro|cinco)\s+dias?/);
+  if (matchEnDias) {
+    const numMap: Record<string, number> = { 'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5 };
+    const n = numMap[matchEnDias[1]] || parseInt(matchEnDias[1]);
+    if (!isNaN(n) && n > 0 && n <= 30) {
+      const d = new Date(hoy);
+      d.setDate(d.getDate() + n);
+      return formatFecha(d);
+    }
+  }
+
+  // 5. Fechas en formato ISO: YYYY-MM-DD
+  const matchISO = texto.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (matchISO) {
+    return matchISO[0];
+  }
+
+  // 6. Fechas en formato Chino: 10月15日 o 2026年10月15日
+  const matchChino = texto.match(/(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日?/);
+  if (matchChino) {
+    const año = matchChino[1] ? parseInt(matchChino[1]) : ahora.getFullYear();
+    const mes = parseInt(matchChino[2]);
+    const dia = parseInt(matchChino[3]);
+    const d = new Date(año, mes - 1, dia);
+    return formatFecha(d);
+  }
+
+  // 7. Meses y variantes abreviadas
+  const meses: Record<string, number> = {
+    'enero': 1, 'ene': 1,
+    'febrero': 2, 'feb': 2,
+    'marzo': 3, 'mar': 3,
+    'abril': 4, 'abr': 4,
+    'mayo': 5, 'may': 5,
+    'junio': 6, 'jun': 6,
+    'julio': 7, 'jul': 7,
+    'agosto': 8, 'ago': 8,
+    'septiembre': 9, 'sep': 9, 'sept': 9,
+    'octubre': 10, 'oct': 10,
+    'noviembre': 11, 'nov': 11,
+    'diciembre': 12, 'dic': 12,
+  };
+
+  // Texto español: "el 15 de octubre", "15 de oct", "el 20 de octubre de 2026"
+  const matchDiaMes = t.match(/(?:(?:el|para\s+el)\s+)?(\d{1,2})\s+de\s+([a-z]+)(?:\s+(?:de|del)?\s*(\d{4}))?/);
+  if (matchDiaMes) {
+    const dia = parseInt(matchDiaMes[1]);
+    const mesNombre = matchDiaMes[2];
+    const año = matchDiaMes[3] ? parseInt(matchDiaMes[3]) : ahora.getFullYear();
+    const mes = meses[mesNombre];
+    if (mes && dia >= 1 && dia <= 31) {
+      const d = new Date(año, mes - 1, dia);
+      return formatFecha(d);
+    }
+  }
+
+  // 8. Fechas numéricas: "15/10", "15-10", "15/10/2026"
+  const matchNumerico = t.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+  if (matchNumerico) {
+    const dia = parseInt(matchNumerico[1]);
+    const mes = parseInt(matchNumerico[2]);
+    const año = matchNumerico[3] ? parseInt(matchNumerico[3]) : ahora.getFullYear();
+    const añoFull = año < 100 ? 2000 + año : año;
+    if (dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12) {
+      const d = new Date(añoFull, mes - 1, dia);
+      return formatFecha(d);
+    }
+  }
+
+  // 9. Días de la semana en español, chino e inglés
   const diasSemana: Record<string, number> = {
     'lunes': 1, 'monday': 1, '周一': 1, '星期一': 1,
     'martes': 2, 'tuesday': 2, '周二': 2, '星期二': 2,
@@ -363,6 +433,19 @@ function extraerFecha(texto: string, ahora: Date): string | null {
 
   for (const [diaStr, num] of Object.entries(diasSemana)) {
     if (t.includes(diaStr) || texto.includes(diaStr)) {
+      // Verificar si además dice un día numérico explícito (ej: "martes 20", "martes 20 de octubre")
+      const matchDiaNum = t.match(new RegExp(diaStr + '\\s+(\\d{1,2})(?:\\s+de\\s+([a-z]+))?'));
+      if (matchDiaNum) {
+        const diaNum = parseInt(matchDiaNum[1]);
+        const mesNom = matchDiaNum[2];
+        const mes = mesNom ? meses[mesNom] : (ahora.getMonth() + 1);
+        const año = ahora.getFullYear();
+        if (diaNum >= 1 && diaNum <= 31 && mes) {
+          const d = new Date(año, mes - 1, diaNum);
+          return formatFecha(d);
+        }
+      }
+
       const d = new Date(hoy);
       const diaActual = d.getDay();
       let diff = num - diaActual;
@@ -372,45 +455,21 @@ function extraerFecha(texto: string, ahora: Date): string | null {
     }
   }
 
-  // Fechas en formato ISO: YYYY-MM-DD
-  const matchISO = texto.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (matchISO) {
-    return matchISO[0];
-  }
-
-  // Fechas en formato Chino: 10月15日 o 2026年10月15日
-  const matchChino = texto.match(/(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日?/);
-  if (matchChino) {
-    const año = matchChino[1] ? parseInt(matchChino[1]) : ahora.getFullYear();
-    const mes = parseInt(matchChino[2]);
-    const dia = parseInt(matchChino[3]);
-    const d = new Date(año, mes - 1, dia);
-    return formatFecha(d);
-  }
-
-  // Fechas numéricas: "15/10", "15-10", "15/10/2026"
-  const matchNumerico = t.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
-  if (matchNumerico) {
-    const dia = parseInt(matchNumerico[1]);
-    const mes = parseInt(matchNumerico[2]);
-    const año = matchNumerico[3] ? parseInt(matchNumerico[3]) : ahora.getFullYear();
-    const añoFull = año < 100 ? 2000 + año : año;
-    const d = new Date(añoFull, mes - 1, dia);
-    return formatFecha(d);
-  }
-
-  // Texto español: "el 15 de octubre"
-  const meses: Record<string, number> = {
-    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
-    'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
-  };
-  const matchDiaMes = t.match(/(?:el\s+)?(\d{1,2})\s+de\s+([a-z]+)/);
-  if (matchDiaMes) {
-    const dia = parseInt(matchDiaMes[1]);
-    const mesNombre = matchDiaMes[2];
-    const mes = meses[mesNombre];
-    if (mes) {
-      const d = new Date(ahora.getFullYear(), mes - 1, dia);
+  // 10. Día solo en el mes corriente ("el 20", "para el 20", "dia 20")
+  const matchSoloDia = t.match(/(?:(?:el|para\s+el|dia)\s+)(\d{1,2})\b/);
+  if (matchSoloDia) {
+    const dia = parseInt(matchSoloDia[1]);
+    if (dia >= 1 && dia <= 31) {
+      let mes = ahora.getMonth();
+      let año = ahora.getFullYear();
+      if (dia < ahora.getDate()) {
+        mes += 1;
+        if (mes > 11) {
+          mes = 0;
+          año += 1;
+        }
+      }
+      const d = new Date(año, mes, dia);
       return formatFecha(d);
     }
   }
@@ -424,28 +483,112 @@ function extraerHora(texto: string): string | null {
   const fmt = (h: number, m: number) => `${pad(h)}:${pad(m)}`;
   const limpio = texto.trim();
 
-  // 1. Formato chino: 上午8点, 下午3点, 8点30, 8点半
-  const matchChino = limpio.match(/(上午|下午|早上|晚上)?\s*(\d{1,2})\s*点(?:\s*(半)|(\d{1,2})\s*分?)?/);
+  // 1. Formato chino: 上午8点, 下午3点, 8点30, 8点半, 3点
+  const matchChino = limpio.match(/(上午|下午|早上|晚上)?\s*([0-9一二两三四五六七八九十]{1,3})\s*点(?:\s*(半)|(\d{1,2})\s*分?)?/);
   if (matchChino) {
     const periodo = matchChino[1];
-    let h = parseInt(matchChino[2]);
+    const rawH = matchChino[2];
+    const chinoMap: Record<string, number> = {
+      '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5,
+      '六': 6, '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12
+    };
+    let h = chinoMap[rawH] || parseInt(rawH);
     let m = 0;
     if (matchChino[3] === '半') m = 30;
     else if (matchChino[4]) m = parseInt(matchChino[4]);
 
-    if ((periodo === '下午' || periodo === '晚上') && h < 12) h += 12;
+    const esPM = (periodo === '下午' || periodo === '晚上');
+    if (esPM && h < 12) h += 12;
+    else if (!periodo && h >= 1 && h <= 6) h += 12;
     return fmt(h, m);
   }
 
-  // 2. Coincidencia directa con dos puntos, punto o 'h' (ej: "07:30", "7:30", "14:00", "07.30", "7h30", "a las 07:30")
-  const matchExacta = limpio.match(/(?:a\s+las?\s+)?\b(\d{1,2})\s*[:.hH]\s*(\d{2})\b/i);
-  if (matchExacta) {
-    const h = parseInt(matchExacta[1]);
-    const m = parseInt(matchExacta[2]);
-    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return fmt(h, m);
+  // 2. Mediodía / Medianoche
+  const tNorm = norm(limpio);
+  if (/medio\s*dia|mediodia|al mediodia|12 del dia/.test(tNorm)) {
+    return '12:00';
+  }
+  if (/medio\s*noche|medianoche|12 de la noche/.test(tNorm)) {
+    return '00:00';
   }
 
-  // 3. Formato con AM/PM: "8am", "8:30pm", "3 pm", "7:30 am"
+  // Modificadores explícitos de período
+  const esPM = /\b(pm|p\.m\.|p\s+m|tarde|noches?|de la tarde|por la tarde|en la tarde|de la noche|por la noche|en la noche|afternoon|evening)\b/i.test(tNorm);
+  const esAM = /\b(am|a\.m\.|a\s+m|de la manana|por la manana|en la manana|en las mananas|temprano|madrugada|de la madrugada|matutino|matutina|morning)\b/i.test(tNorm);
+
+  const palabraNum: Record<string, number> = {
+    'una': 1, 'uno': 1, 'un': 1, 'one': 1,
+    'dos': 2, 'two': 2,
+    'tres': 3, 'three': 3,
+    'cuatro': 4, 'four': 4,
+    'cinco': 5, 'five': 5,
+    'seis': 6, 'six': 6,
+    'siete': 7, 'seven': 7,
+    'ocho': 8, 'eight': 8,
+    'nueve': 9, 'nine': 9,
+    'diez': 10, 'ten': 10,
+    'once': 11, 'eleven': 11,
+    'doce': 12, 'twelve': 12,
+    'trece': 13,
+    'catorce': 14,
+    'quince': 15,
+    'dieciseis': 16, 'dieciséis': 16,
+    'diecisiete': 17,
+    'dieciocho': 18,
+    'diecinueve': 19,
+    'veinte': 20,
+  };
+
+  // Cuarto para las X / 10 para las X / 20 para las X
+  const matchParaLas = tNorm.match(/(?:(?:un\s+)?cuarto|15|diez|10|veinte|20)\s+para\s+las?\s+([a-z0-9]+)/);
+  if (matchParaLas) {
+    const rawH = matchParaLas[1];
+    let h = palabraNum[rawH] || parseInt(rawH);
+    if (!isNaN(h) && h >= 1 && h <= 24) {
+      let minFaltan = 15;
+      if (matchParaLas[0].includes('diez') || matchParaLas[0].includes('10')) minFaltan = 10;
+      if (matchParaLas[0].includes('veinte') || matchParaLas[0].includes('20')) minFaltan = 20;
+
+      h = h - 1;
+      const m = 60 - minFaltan;
+      if (esPM && h < 12) h += 12;
+      else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+      return fmt(h, m);
+    }
+  }
+
+  // X menos cuarto / X menos diez
+  const matchMenos = tNorm.match(/([a-z0-9]+)\s+menos\s+(cuarto|15|diez|10|veinte|20)/);
+  if (matchMenos) {
+    const rawH = matchMenos[1];
+    let h = palabraNum[rawH] || parseInt(rawH);
+    if (!isNaN(h) && h >= 1 && h <= 24) {
+      let minFaltan = 15;
+      if (matchMenos[2] === 'diez' || matchMenos[2] === '10') minFaltan = 10;
+      if (matchMenos[2] === 'veinte' || matchMenos[2] === '20') minFaltan = 20;
+
+      h = h - 1;
+      const m = 60 - minFaltan;
+      if (esPM && h < 12) h += 12;
+      else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+      return fmt(h, m);
+    }
+  }
+
+  // 3. Exacta con dos puntos / punto / h (ej: "07:30", "16:00", "4:30", "4:00")
+  const matchExacta = limpio.match(/(?:a\s+las?|las?|la)?\s*\b(\d{1,2})\s*[:.hH]\s*(\d{2})?\b/i);
+  if (matchExacta) {
+    let h = parseInt(matchExacta[1]);
+    const m = matchExacta[2] ? parseInt(matchExacta[2]) : 0;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      if (esPM && h < 12) h += 12;
+      else if (esAM && h === 12) h = 0;
+      else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+      return fmt(h, m);
+    }
+  }
+
+  // 4. Con am / pm directo: "8am", "4pm", "8:30pm"
   const matchAmPm = limpio.match(/\b(\d{1,2})(?:\s*[:.]\s*(\d{2}))?\s*(am|pm)\b/i);
   if (matchAmPm) {
     let h = parseInt(matchAmPm[1]);
@@ -456,34 +599,82 @@ function extraerHora(texto: string): string | null {
     return fmt(h, m);
   }
 
-  // 4. "07 30", "7 30" (números separados por espacio)
+  // 5. Separados por espacio: '07 30'
   const matchEspacio = limpio.match(/\b(\d{1,2})\s+(\d{2})\b/);
   if (matchEspacio) {
-    const h = parseInt(matchEspacio[1]);
+    let h = parseInt(matchEspacio[1]);
     const m = parseInt(matchEspacio[2]);
-    if (h >= 7 && h <= 18 && m >= 0 && m <= 59) return fmt(h, m);
+    if (m >= 0 && m <= 59) {
+      if (esPM && h < 12) h += 12;
+      else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+      if (h >= 0 && h <= 23) return fmt(h, m);
+    }
   }
 
-  const t = norm(limpio);
-
-  // 5. "a las 10 y media"
-  const matchYMedia = t.match(/(?:a\s+las?\s+)?(\d{1,2})\s+y\s+media/);
-  if (matchYMedia) {
-    return fmt(parseInt(matchYMedia[1]), 30);
+  // Normalizar reemplazando palabras de números por dígitos
+  let textoReemplazado = tNorm;
+  for (const [pal, num] of Object.entries(palabraNum)) {
+    textoReemplazado = textoReemplazado.replace(new RegExp('\\b' + pal + '\\b', 'g'), num.toString());
   }
 
-  // 6. "a las 8" / "las 8" / "a las 08"
-  const matchSimple = t.match(/(?:a\s+)?las?\s+(\d{1,2})\b/);
-  if (matchSimple) {
-    const h = parseInt(matchSimple[1]);
-    if (h >= 7 && h <= 18) return fmt(h, 0);
+  // 6. 'y media' (ej: "las 4 y media", "4 y media de la tarde", "a las cuatro y media")
+  const matchConMinutos = textoReemplazado.match(/(?:a\s+las?|las?|la|que\s+sea\s+a\s+las?|tipo|como\s+a\s+las?|a\s+eso\s+de\s+las?|ponlo\s+a\s+las?|para\s+las?|quiero\s+a\s+las?|deseo\s+a\s+las?)?\s*\b(\d{1,2})\s*(?:y\s+media|y\s+medio)\b/);
+  if (matchConMinutos) {
+    let h = parseInt(matchConMinutos[1]);
+    if (esPM && h < 12) h += 12;
+    else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+    return fmt(h, 30);
   }
 
-  // 7. Número solo entre 7 y 18 (ej: "8", "14")
-  const matchSolo = t.match(/^\s*(\d{1,2})\s*$/);
-  if (matchSolo) {
-    const h = parseInt(matchSolo[1]);
-    if (h >= 7 && h <= 18) return fmt(h, 0);
+  // 7. 'y cuarto'
+  const matchConCuarto = textoReemplazado.match(/(?:a\s+las?|las?|la|que\s+sea\s+a\s+las?|tipo|como\s+a\s+las?|a\s+eso\s+de\s+las?|ponlo\s+a\s+las?|para\s+las?|quiero\s+a\s+las?|deseo\s+a\s+las?)?\s*\b(\d{1,2})\s*y\s+cuarto\b/);
+  if (matchConCuarto) {
+    let h = parseInt(matchConCuarto[1]);
+    if (esPM && h < 12) h += 12;
+    else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+    return fmt(h, 15);
+  }
+
+  // 8. 'y [num]' o 'con [num]' (ej: '2 y 45', '2 con 15')
+  const matchConYNum = textoReemplazado.match(/(?:a\s+las?|las?|la|que\s+sea\s+a\s+las?|tipo|como\s+a\s+las?|a\s+eso\s+de\s+las?|ponlo\s+a\s+las?|para\s+las?|quiero\s+a\s+las?|deseo\s+a\s+las?)?\s*\b(\d{1,2})\s*(?:y|con)\s+(\d{1,2})\b/);
+  if (matchConYNum) {
+    let h = parseInt(matchConYNum[1]);
+    const m = parseInt(matchConYNum[2]);
+    if (m >= 0 && m <= 59) {
+      if (esPM && h < 12) h += 12;
+      else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+      return fmt(h, m);
+    }
+  }
+
+  // 9. Hora simple con prefijo ('la cinco de la tarde', 'que sea a las 4', 'las 5', 'a la 1', 'quiero a las 3')
+  const matchHoraSimple = textoReemplazado.match(/(?:que\s+sea\s+a\s+las?|a\s+las?|las?|la|a\s+la|tipo|como\s+a\s+las?|a\s+eso\s+de\s+las?|ponlo\s+a\s+las?|para\s+las?|cerca\s+de\s+las?|a\s+partir\s+de\s+las?|quiero\s+a\s+las?|deseo\s+a\s+las?)\s+(\d{1,2})\b/);
+  if (matchHoraSimple) {
+    let h = parseInt(matchHoraSimple[1]);
+    if (esPM && h < 12) h += 12;
+    else if (esAM && h === 12) h = 0;
+    else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+    if (h >= 0 && h <= 23) return fmt(h, 0);
+  }
+
+  // 10. Hora seguida de sufijo ('4 de la tarde', '5 de la manana', '4 hrs')
+  const matchHoraSufijo = textoReemplazado.match(/\b(\d{1,2})\s*(?:hrs?|horas?|de la tarde|de la manana|de la noche|pm|am)\b/);
+  if (matchHoraSufijo) {
+    let h = parseInt(matchHoraSufijo[1]);
+    if (esPM && h < 12) h += 12;
+    else if (esAM && h === 12) h = 0;
+    else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+    if (h >= 0 && h <= 23) return fmt(h, 0);
+  }
+
+  // 11. Número solo ('4', '5', '8', '16')
+  const matchNumeroSolo = textoReemplazado.match(/^\s*(\d{1,2})\s*$/);
+  if (matchNumeroSolo) {
+    let h = parseInt(matchNumeroSolo[1]);
+    if (esPM && h < 12) h += 12;
+    else if (esAM && h === 12) h = 0;
+    else if (!esAM && !esPM && h >= 1 && h <= 6) h += 12;
+    if (h >= 0 && h <= 23) return fmt(h, 0);
   }
 
   return null;
@@ -870,23 +1061,24 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
   // 7. PRECIOS Y MÉTODOS DE PAGO
   {
     categoria: 'PRECIOS_PAGOS',
-    palabrasClave: ['precio', 'costo', 'valor', 'cuanto cuesta', 'cuanto cobran', 'tarifa', 'pagar', 'tarjeta', 'transferencia', 'efectivo'],
-    patrones: [/(precio|costo|valor|cuanto|cuesta|cobran|tarifa|forma de pago|tarjeta|transferencia)/],
+    palabrasClave: ['precio', 'costo', 'valor', 'cuanto cuesta', 'cuanto cobran', 'tarifa', 'pagar', 'tarjeta', 'transferencia', 'efectivo', 'cuanto sale', 'precios', 'costos', 'tarifas', 'cuanto vale'],
+    patrones: [/(precio|costo|valor|cuanto\s+cuesta|cuanto\s+cobran|tarifa|forma\s+de\s+pago|tarjeta|transferencia|cuanto\s+sale|cuanto\s+vale)/i],
     palabrasChinas: ['多少钱', '价格', '费用', '收费', '贵不贵', '支付方式', '刷卡'],
     palabrasIngles: ['price', 'cost', 'how much', 'fee', 'payment', 'card'],
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `Precios en chino.`,
-          respuesta: `💰 Ofrecemos tarifas solidarias y aceptamos efectivo, transferencia o tarjeta. ¿Qué examen necesitas realizarte para indicarte el costo exacto?`
+          razonamiento: `Consulta de precios: se informa que los análisis clínicos tienen costos accesibles de 20 a 50 Bs. y se orienta a consultar al encargado para costos específicos.`,
+          respuesta: `💰 Los análisis clínicos tienen un costo aproximado de **20 a 50 Bs. (Bolivianos)**. Para consultar costos específicos y precisos según el estudio médico, por favor comunícate directamente con el encargado del laboratorio. ¿Te gustaría agendar una cita?`
         };
       }
       const opciones = [
-        `💰 Manejamos tarifas accesibles y aceptamos efectivo, transferencias y tarjetas de débito/crédito. ¿Qué examen necesitas realizarte para darte el precio exacto?`,
-        `Nuestros precios son accesibles y con facilidades de pago (efectivo, tarjeta o transferencia). ¿Cuál es el estudio que te solicitó tu médico?`
+        `💰 Nuestros análisis clínicos tienen costos aproximados entre **20 y 50 Bs.** Para consultar costos precisos según el estudio específico que requieras, te sugerimos contactarte con el encargado o la administración del laboratorio. ¿Deseas agendar tu cita?`,
+        `💵 Manejamos tarifas muy accesibles: los costos de los análisis clínicos oscilan aproximadamente entre **20 y 50 Bs.** Para tarifas exactas y cotizaciones detalladas de cada prueba, puedes consultar directamente con el encargado del laboratorio. ¿Qué estudio necesitas realizarte?`,
+        `💡 El costo aproximado de los análisis clínicos es de **20 a 50 Bs.** Si deseas consultar el costo preciso de una prueba específica, por favor comunícate con el encargado del laboratorio. ¿Te gustaría reservar tu turno?`
       ];
       return {
-        razonamiento: `Costos y formas de pago resumidos en 2 oraciones.`,
+        razonamiento: `Costos en Bolivianos (20 a 50 Bs.) y recomendación de contactar al encargado para costos precisos.`,
         respuesta: elegirVariacion(opciones)
       };
     }
@@ -1039,7 +1231,7 @@ function manejarFlujoCita(
     if (fecha < hoyStr) {
       return {
         pensamiento: `Paso 1 (Comprensión): El usuario solicitó la fecha ${fecha}, la cual ya pasó en relación a hoy (${hoyStr}). Rechazo de forma educada y pido una fecha válida.`,
-        respuesta: idioma.esChino 
+        respuesta: idioma.esChino
           ? `⚠️ 该日期已经过去。请选择今天或未来的日期：\n⚠️ Esa fecha ya pasó. Por favor indica una fecha de hoy en adelante:`
           : `⚠️ Esa fecha ya pasó. Por favor indícame una fecha a partir de hoy en adelante:`,
         intencion: 'programar_cita',
