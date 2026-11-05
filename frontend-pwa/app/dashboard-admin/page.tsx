@@ -31,11 +31,15 @@ export default function DashboardAdmin() {
     }
 
     const correoGuardado = localStorage.getItem('adminEmail');
-    const nombreGuardado = localStorage.getItem('adminName');
+    let nombreGuardado = localStorage.getItem('adminName');
+    if (nombreGuardado && (nombreGuardado.includes('Armando') || nombreGuardado === 'Administrador')) {
+      nombreGuardado = 'Dra. Carmen Rosa Gamboa';
+      localStorage.setItem('adminName', 'Dra. Carmen Rosa Gamboa');
+    }
 
     if (correoGuardado && correoGuardado !== "undefined") {
       setAdminEmail(correoGuardado);
-      setAdminName(nombreGuardado || "Administrador");
+      setAdminName(nombreGuardado || "Dra. Carmen Rosa Gamboa");
 
       const cargarEstadisticasReales = async () => {
         try {

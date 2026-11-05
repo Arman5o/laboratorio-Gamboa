@@ -34,7 +34,7 @@ export class AgenteIaService implements OnModuleInit {
         this.genAI = new GoogleGenerativeAI(apiKey);
         this.geminiModel = this.genAI.getGenerativeModel({
           model: 'gemini-3.5-flash-lite',
-          systemInstruction: `Eres AIDA, el Agente Inteligente del Laboratorio Clínico Gamboa (Dr. Armando Gamboa Orellana).
+          systemInstruction: `Eres AIDA, el Agente Inteligente del Laboratorio Clínico Gamboa, administrado y dirigido por la Dra. Carmen Rosa Gamboa.
 Tu rol es interactuar con el paciente o usuario de manera empática, profesional y altamente inteligente.
 Debes responder SIEMPRE en formato JSON estricto con esta estructura:
 {
@@ -46,7 +46,7 @@ Reglas operativas y entrenamiento:
 1. Responde a CUALQUIER cosa que pregunte o diga el paciente o usuario, incluso con un simple "hola", iniciando un diálogo interactivo y atento.
 2. Si el usuario escribe palabras con letras mezcladas, abreviaciones de chat o errores de tipeo (ej: 'hla', 'q tal', 'sngre', 'orna', 'qiero agndar'), deduce lo que quiso decir con pensamiento razonable e indícalo en el Paso 2 de tu pensamiento.
 3. Si el usuario escribe en chino (中文), español, o ambos mezclados (ej: '你好 quiero saber el precio', '你好我想做血液检查'), comprende fluidamente y responde con cortesía bilingüe o en su idioma según corresponda.
-4. Datos del laboratorio: Director Médico: Dr. Armando Gamboa Orellana. Horario: Lunes a Domingo todos los días (Lunes a Sábado 07:30 a 18:00, Domingos 07:30 a 12:00 - medio día; toma de muestras en ayunas de 07:30 a 11:30). Exámenes disponibles: Análisis de Sangre (Rutina), Detección Molecular (PCR), Análisis de Orina (Completo), Perfil Lipídico, Prueba de Tolerancia a la Glucosa. Resultados en 24h (PCR 24-48h).
+4. Datos del laboratorio: Administradora y Dirección: Dra. Carmen Rosa Gamboa. Horario: Lunes a Domingo todos los días (Lunes a Sábado 07:30 a 18:00, Domingos 07:30 a 12:00 - medio día; toma de muestras en ayunas de 07:30 a 11:30). Exámenes disponibles: Análisis de Sangre (Rutina), Detección Molecular (PCR), Análisis de Orina (Completo), Perfil Lipídico, Prueba de Tolerancia a la Glucosa. Resultados en 24h (PCR 24-48h).
 5. DELIMITACIÓN ESTRICTA DEL ÁREA (LABORATORIO DE ANÁLISIS CLÍNICOS EXCLUSIVAMENTE):
    - Eres únicamente el asistente de un LABORATORIO DE ANÁLISIS CLÍNICOS. NO eres médico tratante, NO realizas consultas médicas generales, NO emites diagnósticos de enfermedades ni recetas medicamentos o tratamientos.
    - Si el paciente te cuenta síntomas, dolores o malestares corporales (ej: 'me duele la barriga', 'dolor de estómago', 'me duele la cabeza', 'tengo fiebre', 'qué medicamento me tomo', 'qué pastilla tomo'):
@@ -556,49 +556,15 @@ Reglas operativas y entrenamiento:
       return resultadoLocal as any;
     }
 
-    // 2. Si el flujo requiere acción de citas (PEDIR_EXAMEN, PEDIR_FECHA, PEDIR_HORA, CONFIRMAR_CITA),
-    // retornamos inmediatamente para que el frontend active los componentes interactivos
-    if (resultadoLocal.accion) {
-      this.logger.log(`🎯 [AIDA Citas] Acción: ${resultadoLocal.accion} [${resultadoLocal.intencion}]`);
+    // 2. Si el flujo es una acción interactiva técnica de cita (PEDIR_FECHA, PEDIR_HORA, CONFIRMAR_CITA),
+    // retornamos inmediatamente para que el frontend active los componentes de selección
+    const esAccionTecnicaCita = resultadoLocal.accion && ['PEDIR_FECHA', 'PEDIR_HORA', 'CONFIRMAR_CITA'].includes(resultadoLocal.accion);
+    if (esAccionTecnicaCita) {
+      this.logger.log(`🎯 [AIDA Citas] Acción interactiva: ${resultadoLocal.accion} [${resultadoLocal.intencion}]`);
       return resultadoLocal as any;
     }
 
-    // 2.1 Delimitación médica de síntomas fuera del área del laboratorio
-    if (resultadoLocal.intencion === 'DELIMITACION_MEDICA_SINTOMAS') {
-      contexto.ultimaIntencion = 'DELIMITACION_MEDICA_SINTOMAS';
-      this.logger.log(`🩺 [AIDA Delimitación Clínica] Síntomas detectados fuera del alcance de laboratorio.`);
-      return resultadoLocal as any;
-    }
-
-    // 2.2 Orientación sobre diagnósticos y recomendación de exámenes clínicos
-    if (resultadoLocal.intencion === 'ORIENTACION_DIAGNOSTICOS_EXAMENES' || resultadoLocal.intencion === 'SOLICITUD_ANALISIS_O_CITA') {
-      contexto.ultimaIntencion = 'programar_cita';
-      this.logger.log(`🔬 [AIDA Diagnósticos/Solicitud] Solicitud de análisis o catálogo interactivo presentado.`);
-      return resultadoLocal as any;
-    }
-
-    // 2.3 Consultas externas ajenas al laboratorio (recetas de cocina, chistes, cultura general, etc.)
-    if (resultadoLocal.intencion === 'CONSULTA_EXTERNA_NO_CLINICA') {
-      contexto.ultimaIntencion = 'CONSULTA_EXTERNA_NO_CLINICA';
-      this.logger.log(`📚 [AIDA Consulta Externa] Pregunta no clínica: delimitación concisa directa.`);
-      return resultadoLocal as any;
-    }
-
-    // 2.4 Consultas de precios y costos (siempre en Bolivianos, 20 a 50 Bs, contacto con encargado para precios precisos)
-    if (resultadoLocal.intencion === 'PRECIOS_PAGOS') {
-      contexto.ultimaIntencion = 'PRECIOS_PAGOS';
-      this.logger.log(`💰 [AIDA Precios] Información de costos en Bolivianos (20 a 50 Bs) provista.`);
-      return resultadoLocal as any;
-    }
-
-    // 2.5 Consultas de contacto del encargado o teléfono del laboratorio (71772118)
-    if (resultadoLocal.intencion === 'CONTACTO_ENCARGADO' || resultadoLocal.intencion === 'UBICACION_CONTACTO') {
-      contexto.ultimaIntencion = resultadoLocal.intencion;
-      this.logger.log(`📞 [AIDA Contacto] Información de contacto del encargado (71772118) provista.`);
-      return resultadoLocal as any;
-    }
-
-    // 3. Si Gemini 3.5 Flash-Lite está activo, enriquecemos la conversación
+    // 3. Si Gemini 3.5 Flash-Lite está activo, generamos una respuesta conversacional dinámica, variada e inteligente
     if (this.geminiModel) {
       try {
         const promptChat = `Paciente: ${nombrePaciente || 'Usuario'}
@@ -617,13 +583,19 @@ Mensaje actual del usuario: "${mensaje}"`;
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           if (parsed.pensamiento && parsed.respuesta) {
-            this.logger.log(`✨ [AIDA Gemini 3.5] Respuesta generada: [${parsed.intencion}]`);
+            this.logger.log(`✨ [AIDA Gemini 3.5] Respuesta interactiva generada: [${parsed.intencion}]`);
             contexto.ultimaIntencion = parsed.intencion;
             // Actualizar última respuesta del agente en el historial
             if (contexto.historial && contexto.historial.length > 0) {
               contexto.historial[contexto.historial.length - 1].texto = parsed.respuesta;
             }
-            return parsed;
+            // Adjuntar opciones interactivas si el motor local las sugirió para este contexto
+            return {
+              ...parsed,
+              opciones: (resultadoLocal as any).opciones || (resultadoLocal as any).opcionesExamen || parsed.opciones,
+              accion: resultadoLocal.accion || parsed.accion,
+              citaSlots: resultadoLocal.citaSlots,
+            };
           }
         }
       } catch (err) {
@@ -631,7 +603,7 @@ Mensaje actual del usuario: "${mensaje}"`;
       }
     }
 
-    // 4. Retorno del motor cognitivo local
+    // 4. Retorno del motor cognitivo local si Gemini no está disponible o falló
     this.logger.log(`💭 [AIDA Motor Local] Intención: [${resultadoLocal.intencion}]`);
     return resultadoLocal as any;
   }

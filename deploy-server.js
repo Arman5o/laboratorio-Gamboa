@@ -21,6 +21,15 @@ conn.on('ready', () => {
       { local: path.join(__dirname, 'backend-api/src/citas/citas.service.ts'), remote: '/var/www/proyectos/gamboa/backend-api/src/citas/citas.service.ts' },
       { local: path.join(__dirname, 'frontend-pwa/app/components/AgenteIA.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/components/AgenteIA.tsx' },
       { local: path.join(__dirname, 'frontend-pwa/app/dashboard-paciente/resultados/page.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/dashboard-paciente/resultados/page.tsx' },
+      { local: path.join(__dirname, 'frontend-pwa/app/layout.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/layout.tsx' },
+      { local: path.join(__dirname, 'frontend-pwa/app/globals.css'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/globals.css' },
+      { local: path.join(__dirname, 'frontend-pwa/next.config.ts'), remote: '/var/www/proyectos/gamboa/frontend-pwa/next.config.ts' },
+      { local: path.join(__dirname, 'frontend-pwa/app/dashboard-admin/page.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/dashboard-admin/page.tsx' },
+      { local: path.join(__dirname, 'frontend-pwa/app/dashboard-admin/gestionar-citas/page.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/dashboard-admin/gestionar-citas/page.tsx' },
+      { local: path.join(__dirname, 'frontend-pwa/app/dashboard-admin/pacientes/page.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/dashboard-admin/pacientes/page.tsx' },
+      { local: path.join(__dirname, 'frontend-pwa/app/dashboard-admin/subir-resultados/page.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/dashboard-admin/subir-resultados/page.tsx' },
+      { local: path.join(__dirname, 'frontend-pwa/app/dashboard-admin/reportes/page.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/dashboard-admin/reportes/page.tsx' },
+      { local: path.join(__dirname, 'frontend-pwa/app/dashboard-admin/notificaciones/page.tsx'), remote: '/var/www/proyectos/gamboa/frontend-pwa/app/dashboard-admin/notificaciones/page.tsx' },
     ];
 
     let uploadIndex = 0;
@@ -30,6 +39,7 @@ conn.on('ready', () => {
         console.log('🔨 Compilando Backend y Frontend en el servidor...');
         const remoteCmd = `
           export PATH=$PATH:/home/gamboa/.nvm/versions/node/v20.18.0/bin
+          mongosh laboratorio_gamboa --eval "db.administrador.updateMany({}, { \\$set: { nombre: 'Dra. Carmen Rosa Gamboa' } }); db.administradores.updateMany({}, { \\$set: { nombre: 'Dra. Carmen Rosa Gamboa' } });" || true
           cd /var/www/proyectos/gamboa/backend-api && npm run build && pm2 restart gamboa-backend
           cd /var/www/proyectos/gamboa/frontend-pwa && npm run build && pm2 restart gamboa-frontend
           pm2 list

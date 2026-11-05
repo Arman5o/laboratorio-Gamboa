@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════
  *  MOTOR DE REGLAS Y RAZONAMIENTO COGNITIVO DE AIDA
- *  Agente Inteligente del Laboratorio Gamboa (Dr. Armando Gamboa)
+ *  Agente Inteligente del Laboratorio Gamboa (Dra. Carmen Rosa Gamboa)
  * ───────────────────────────────────────────────────────────────────
  *  Capacidades de Inteligencia y Razonamiento:
  *  ✅ Extracción NLU multiidioma (Español, Chino 中文, Inglés)
@@ -813,6 +813,13 @@ export function extraerHora(texto: string): string | null {
 function esIntencionCita(texto: string, textoFuzzy: string, contexto?: ContextoSesion): boolean {
   const t = `${norm(texto)} ${textoFuzzy}`;
 
+  // Si el mensaje es una pregunta sobre identidad, orientación, precios, ubicación, etc., NO es intención de cita
+  if (/^(quien|que|cual|como|donde|cuando|cuanto|por\s+que|para\s+que|tu\s+eres|quien\s+sos|que\s+hago|ayuda|hola|buen|buenas)\b/i.test(t) || /\?$/.test(texto.trim())) {
+    if (!/agendar|reservar|programar|pedir\s+turno|sacar\s+turno/i.test(t)) {
+      return false;
+    }
+  }
+
   // Si el usuario viene de la delimitación médica o consulta externa
   // y responde afirmativamente, activamos de inmediato el flujo de agendamiento
   if (contexto?.ultimaIntencion === 'DELIMITACION_MEDICA_SINTOMAS' || contexto?.ultimaIntencion === 'CONSULTA_EXTERNA_NO_CLINICA') {
@@ -1102,7 +1109,7 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
       /\breceta(s)?\b(?!\s+(medica|médica))/i,
       /(como\s+(hacer|cocinar|preparar|elaborar)\s+)/i,
       /(ingredientes\s+(de|para)\s+)/i,
-      /(cuentame\s+(un\s+)?(chiste|cuento|historia)|dime\s+(un\s+)?(chiste|poema|cancion)|cual\s+es\s+la\s+capital|quien\s+(es|fue|gano)|clima\s+en|como\s+reparar)/i
+      /(cuentame\s+(un\s+)?(chiste|cuento|historia)|dime\s+(un\s+)?(chiste|poema|cancion)|cual\s+es\s+la\s+capital|quien\s+(fue|gano|descubrio|invento)|clima\s+en|como\s+reparar)/i
     ],
     palabrasChinas: ['菜谱', '做饭', '面包做法', '食谱', '做面包', '笑话', '讲个笑话', '天气'],
     palabrasIngles: ['recipe', 'how to cook', 'bread recipe', 'cake recipe', 'joke', 'weather', 'movie'],
@@ -1218,39 +1225,85 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
   // 3. IDENTIDAD Y CAPACIDADES DE AIDA
   {
     categoria: 'IDENTIDAD',
-    palabrasClave: ['quien eres', 'que eres', 'como te llamas', 'que haces', 'que puedes hacer', 'eres un robot', 'eres ia', 'eres bot'],
-    patrones: [/quien eres/, /como te llamas/, /que (haces|puedes hacer)/, /eres (ia|bot|robot|humano)/],
+    palabrasClave: [
+      'quien eres', 'que eres', 'como te llamas', 'que haces', 'que puedes hacer',
+      'eres un robot', 'eres ia', 'eres bot', 'tu eres', 'quien sos', 'presentate',
+      'identificate', 'eres', 'tu quien eres', 'tu que eres', 'aida'
+    ],
+    patrones: [
+      /(tu\s+eres|quien\s+eres|quien\s+sos|como\s+te\s+llamas|que\s+(haces|puedes\s+hacer)|eres\s+(ia|bot|robot|humano)|que\s+eres)/i,
+      /^tu\s+eres\s*\??$/i,
+      /^quien\s+(eres|sos)\s*\??$/i
+    ],
     palabrasChinas: ['你是谁', '你叫什么', '你能做什么', '你是机器人吗', '你的功能'],
     palabrasIngles: ['who are you', 'what can you do', 'what is your name', 'are you ai', 'are you a robot'],
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
           razonamiento: `Identidad en chino.`,
-          respuesta: `我是 **AIDA**，甘博亚实验室的AI助手。我协助您智能预约化验、了解检查禁忌并查看检验结果。🔬`
+          respuesta: `我是 **AIDA**，甘博亚实验室的AI助手。我协助您智能预约化验、了解检查禁忌并查看检验结果。🔬`,
+          opciones: ['📅 预约化验 (Citas)', '⏰ 营业时间 (Horarios)']
         };
       }
       const opciones = [
-        `Soy **AIDA**, la asistente inteligente del **Laboratorio Clínico Gamboa**. Te ayudo a agendar citas, verificar requisitos de ayuno y consultar tus resultados. 🩺`,
-        `Soy **AIDA**, asistente virtual supervisada por el **Dr. Armando Gamboa Orellana**. Mi función es guiarte en tus análisis clínicos y reservar tus turnos en segundos. 🔬`
+        `¡Hola! Soy **AIDA**, la asistente inteligente del **Laboratorio Clínico Gamboa** (bajo la dirección y administración de la **Dra. Carmen Rosa Gamboa**). Estoy aquí para ayudarte a consultar información sobre análisis clínicos, requisitos de ayuno, horarios, precios y a programar tus citas médicas. ¿En qué te puedo colaborar hoy?`,
+        `Soy **AIDA**, asistente virtual del **Laboratorio Clínico Gamboa**, bajo la dirección y administración de la **Dra. Carmen Rosa Gamboa**. Te oriento sobre todas nuestras pruebas de laboratorio, preparación necesaria y gestión de tus resultados o turnos. ¿Qué consulta tienes?`
       ];
       return {
-        razonamiento: `Identidad explicada en 2 oraciones concisas.`,
-        respuesta: elegirVariacion(opciones)
+        razonamiento: `Identidad explicada con cordialidad y resumen claro de funciones.`,
+        respuesta: elegirVariacion(opciones),
+        opciones: ['📅 Programar cita', '🧪 Exámenes disponibles', '⏰ Horarios de atención']
       };
     }
   },
 
-  // 4. DIRECTOR MÉDICO (DR. ARMANDO GAMBOA)
+  // 3.1 GUÍA Y ORIENTACIÓN DE SERVICIOS ("QUÉ HAGO", "CÓMO FUNCIONA", "AYUDA")
+  {
+    categoria: 'GUIA_ORIENTACION',
+    palabrasClave: [
+      'que hago', 'que puedo hacer', 'como funciona', 'como se usa', 'ayuda', 'ayudame',
+      'orientame', 'que opciones tengo', 'que servicios tienen', 'en que me ayudas',
+      'para que sirves', 'que tengo que hacer', 'no se que hacer', 'instrucciones', 'opciones'
+    ],
+    patrones: [
+      /^(que\s+hago|como\s+hago|que\s+puedo\s+hacer|como\s+funciona|ayuda|orientame|en\s+que\s+me\s+ayudas|no\s+se\s+que\s+hacer)\b/i,
+      /(como\s+funciona\s+(el\s+sistema|el\s+laboratorio|aida)|que\s+opciones\s+tengo)/i
+    ],
+    palabrasChinas: ['我该怎么做', '怎么操作', '怎么用', '帮助', '有什么功能', '指南'],
+    palabrasIngles: ['what should i do', 'how does it work', 'help', 'what can i do', 'how to use'],
+    generarRespuesta: (idioma) => {
+      const opciones = [
+        `¡Con mucho gusto te oriento! En el **Laboratorio Clínico Gamboa** puedo ayudarte con:\n\n• 📅 **Agendar citas** para tus análisis clínicos (sangre, orina, perfil lipídico, glucosa, PCR).\n• 🧪 **Consultar preparación** (requisitos de ayuno, horarios de toma de muestras de 07:30 a 11:30).\n• 📊 **Ver y descargar resultados** de tus exámenes en PDF.\n• ⏰ **Consultar horarios de atención y costos** aproximados (20 a 50 Bs).\n\n¿Por cuál de estas opciones te gustaría comenzar?`,
+        `¡Te explico con gusto! Como asistente de **Laboratorio Gamboa**, puedes consultarme sobre:\n\n1. Tipos de exámenes y requisitos de preparación (ayuno, medicamentos).\n2. Programación de citas en el horario que más te convenga (07:30 a 18:00 hrs).\n3. Horarios del laboratorio y contacto de administración (Dra. Carmen Rosa Gamboa - 71772118).\n4. Consulta y descarga de tus resultados clínicos.\n\n¿Deseas agendar un estudio o resolver alguna duda clínica?`
+      ];
+      return {
+        razonamiento: `Orientación completa sobre el funcionamiento y servicios del laboratorio.`,
+        respuesta: elegirVariacion(opciones),
+        opciones: ['📅 Programar cita', '🧪 Exámenes disponibles', '⏰ Horarios de atención', '📊 Ver mis resultados']
+      };
+    }
+  },
+
+  // 4. ADMINISTRACIÓN / DIRECCIÓN (DRA. CARMEN ROSA GAMBOA)
   {
     categoria: 'DIRECTOR_MEDICO',
-    palabrasClave: ['doctor', 'dr armando', 'gamboa', 'director', 'quien atiende', 'medico', 'profesional'],
-    patrones: [/(doctor|medico|dr|responsable|director).*(gamboa|laboratorio)?/],
-    palabrasChinas: ['医生', '甘博亚医生', '主任', '谁负责'],
-    palabrasIngles: ['doctor', 'dr gamboa', 'who is the doctor'],
+    palabrasClave: [
+      'doctor', 'doctora', 'dr', 'dra', 'carmen', 'carmen rosa', 'carmen rosa gamboa', 'gamboa',
+      'directora', 'administradora', 'director', 'administrador', 'quien administra', 'quien atiende',
+      'quien es el doctor', 'quien es la doctora', 'quien es el director', 'quien es el encargado',
+      'responsable', 'duena', 'propietaria', 'titular', 'bioquimica'
+    ],
+    patrones: [
+      /(quien\s+es\s+(el\s+|la\s+)?(doctor|doctora|administrador|administradora|director|directora|encargad[oa]|bioquimic[oa]|jefe|titular|responsable)|(doctor|doctora|administradora?|directora?|bioquimica?)\s+(del\s+laboratorio|a\s+cargo)|quien\s+(atiende|administra|dirige|gestiona))/i,
+      /(administradora?|directora?|responsable|carmen\s+rosa|carmen\s+gamboa|dra?\s+carmen|doctora?\s+carmen|quien\s+administra|quien\s+atiende|titular)/i,
+      /\b(dra?\b|doctora?)\b/i
+    ],
+    palabrasChinas: ['管理员', '甘博亚女士', '主任', '谁负责', '负责人'],
+    palabrasIngles: ['administrator', 'carmen rosa gamboa', 'manager', 'director', 'who manages'],
     generarRespuesta: (idioma) => {
       return {
-        razonamiento: `Director médico explicado con precisión y brevedad.`,
-        respuesta: `👨‍⚕️ El director es el **Dr. Armando Gamboa Orellana**, especialista bioquímico-clínico responsable de la validación y calidad de todos los análisis del laboratorio.`
+        razonamiento: `Administración del laboratorio explicada con precisión y brevedad.`,
+        respuesta: `👩‍⚕️ La directora, administradora y responsable del **Laboratorio Clínico Gamboa** es la **Dra. Carmen Rosa Gamboa**, encargada de la gestión médica, validación y calidad de todos los servicios del laboratorio.`
       };
     }
   },
@@ -1617,30 +1670,36 @@ export function procesarConMotorDeReglas(
   // 1. Análisis lingüístico y corrección fonética/typos
   const idioma = detectarIdioma(mensaje);
   const { textoNormalizado, correcciones } = interpretarTextoConFuzzy(mensaje);
+  const tNorm = norm(mensaje);
 
-  // 1.2 Memoria contextual temporal:
-  let enFlujoCita = contexto.temaActual === 'cita';
-  let intentaCita = esIntencionCita(mensaje, textoNormalizado, contexto);
+  // 1.1 Si el usuario hace una PREGUNTA o consulta (identidad, qué hago, horarios, precios, ubicación, dudas clínicas)
+  // o es un saludo, NUNCA debe bloquearse con flujo de citas. Se debe responder la pregunta del usuario.
+  const esPreguntaOConversacion =
+    /^(quien|que|cual|como|donde|cuando|cuanto|por\s+que|para\s+que|tu\s+eres|quien\s+sos|que\s+hago|ayuda|hola|buen|buenas)\b/i.test(tNorm) ||
+    /^(tu\s+eres|quien\s+eres|que\s+eres|como\s+te\s+llamas|que\s+hago|como\s+funciona|que\s+haces|en\s+que\s+me\s+ayudas)\b/i.test(tNorm) ||
+    /\?$/.test(mensaje.trim());
 
-  // Si no está explícito en el mensaje pero en el historial reciente el agente estaba esperando datos de cita:
-  if (!enFlujoCita && !intentaCita && contexto.historial && contexto.historial.length > 0) {
-    const ultimosMensajesAgente = contexto.historial.filter(m => m.de === 'agente').slice(-2);
-    const ultimoAgente = ultimosMensajesAgente[ultimosMensajesAgente.length - 1];
-    if (ultimoAgente) {
-      const textoUltimo = norm(ultimoAgente.texto);
-      const preguntabaCita = /fecha|hora|examen|analisis|estudio|turno|cita|agendar|confirmamos|confirmar|para que fecha|a que hora/i.test(textoUltimo);
-      if (preguntabaCita) {
-        enFlujoCita = true;
-        contexto.temaActual = 'cita';
-      }
-    }
-  }
+  // 1.2 Detección de datos concretos de cita aportados en este mensaje
+  const examenEnMensaje = extraerExamen(mensaje) || extraerExamen(textoNormalizado);
+  const fechaEnMensaje = extraerFecha(mensaje, ahora);
+  const horaEnMensaje = extraerHora(mensaje);
+  const esConfirmacion = esConfirmacionAfirmativa(mensaje);
+  const esCancelacion = /cancelar|olvidalo|ya no|no quiero|cancel|stop/i.test(mensaje);
+  const intentaCita = esIntencionCita(mensaje, textoNormalizado, contexto);
 
-  if (enFlujoCita || intentaCita) {
+  // El usuario realmente está en flujo de cita si:
+  // a) Expresa explícitamente deseo de agendar cita (ej. "quiero agendar una cita", "programar cita")
+  // b) O si ya tenía slots activos de cita y en este turno aporta un dato específico (examen, fecha, hora, confirmación o cancelación)
+  // c) Y NO es una pregunta general sobre el laboratorio o el bot
+  const usuarioAportaDatoCita = Boolean(examenEnMensaje || fechaEnMensaje || horaEnMensaje || esConfirmacion || esCancelacion);
+  const estaEnFlujoCitaActivo = contexto.temaActual === 'cita' && contexto.citaSlots && usuarioAportaDatoCita;
+
+  if (!esPreguntaOConversacion && (intentaCita || estaEnFlujoCitaActivo)) {
     return manejarFlujoCita(mensaje, textoNormalizado, idioma, correcciones, contexto, ahora);
   }
 
-  // 3. Conversación abierta razonada
+  // 2. Si es una pregunta, saludo o consulta general sobre el área:
+  // Evaluamos las reglas de conversación abierta con inteligencia
   return manejarConversacionAbierta(mensaje, textoNormalizado, idioma, correcciones, contexto, ahora);
 }
 
@@ -2056,6 +2115,11 @@ function manejarConversacionAbierta(
     // Prioridad muy alta a consultas de contacto del encargado o teléfono directo
     if (regla.categoria === 'CONTACTO_ENCARGADO' && puntaje > 0) {
       puntaje += 35;
+    }
+
+    // Prioridad muy alta a consultas sobre dirección médica o administración (Dra. Carmen Rosa Gamboa)
+    if (regla.categoria === 'DIRECTOR_MEDICO' && puntaje > 0) {
+      puntaje += 40;
     }
 
     if (puntaje > maxPuntaje) {

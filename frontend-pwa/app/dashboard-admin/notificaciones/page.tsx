@@ -28,10 +28,14 @@ export default function NotificacionesAdmin() {
     if (window.innerWidth >= 768) setIsSidebarOpen(true);
 
     const email = localStorage.getItem("adminEmail");
-    const nombre = localStorage.getItem("adminName");
+    let nombre = localStorage.getItem("adminName");
+    if (nombre && (nombre.includes("Armando") || nombre === "Administrador")) {
+      nombre = "Dra. Carmen Rosa Gamboa";
+      localStorage.setItem("adminName", "Dra. Carmen Rosa Gamboa");
+    }
     if (!email) { router.push("/login"); return; }
     setAdminEmail(email);
-    setAdminName(nombre ?? "Administrador");
+    setAdminName(nombre ?? "Dra. Carmen Rosa Gamboa");
 
     const socket = conectarSocket();
     socketRef.current = socket;
