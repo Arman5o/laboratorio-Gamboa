@@ -63,15 +63,6 @@ const EXAMENES = [
   "Prueba de Tolerancia a la Glucosa",
 ];
 
-const FRASES_PENSANDO = [
-  "Analizando tu mensaje...",
-  "Procesando con mis algoritmos...",
-  "Revisando el historial...",
-  "Formulando la mejor respuesta...",
-  "Consultando mi base de conocimiento...",
-  "Razonando sobre tu consulta...",
-];
-
 // ─── AVATAR AIDA ─────────────────────────────────────────
 function AvatarAIDA({ mood, size = "md" }: { mood: MoodAgente; size?: "sm" | "md" | "lg" }) {
   const emoji: Record<MoodAgente, string> = {
@@ -98,91 +89,62 @@ function AvatarAIDA({ mood, size = "md" }: { mood: MoodAgente; size?: "sm" | "md
   );
 }
 
-// ─── PANEL DE PENSAMIENTO ─────────────────────────────────
-function PanelPensamiento({ visible }: { visible: boolean }) {
-  const [fraseIdx, setFraseIdx] = useState(0);
-
-  useEffect(() => {
-    if (!visible) return;
-    setFraseIdx(0);
-    const intervalo = setInterval(() => {
-      setFraseIdx((i) => (i + 1) % FRASES_PENSANDO.length);
-    }, 1400);
-    return () => clearInterval(intervalo);
-  }, [visible]);
-
+// ─── INDICADOR DE ESCRITURA ESTILO WHATSAPP ─────────────────
+function IndicadorEscribiendo({ visible }: { visible: boolean }) {
   if (!visible) return null;
 
   return (
-    <div className="flex gap-2 items-start" style={{ animation: "fadeIn 0.3s ease-out" }}>
-      <AvatarAIDA mood="thinking" size="sm" />
-      <div className="bg-slate-800/80 border border-violet-500/30 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex gap-1">
-            {[0, 1, 2].map((d) => (
-              <span
-                key={d}
-                className="w-1.5 h-1.5 bg-violet-400 rounded-full animate-bounce"
-                style={{ animationDelay: `${d * 150}ms` }}
-              />
-            ))}
-          </div>
-          <span className="text-[10px] text-violet-400 font-semibold uppercase tracking-widest">
-            AIDA pensando
-          </span>
+    <div className="flex gap-2 items-end mb-2" style={{ animation: "fadeIn 0.25s ease-out" }}>
+      <div className="w-7 h-7 shrink-0 bg-gradient-to-br from-cyan-600/20 to-violet-600/20 border border-cyan-600/30 rounded-full flex items-center justify-center text-sm mb-1">
+        🤖
+      </div>
+      <div className="bg-slate-800/90 border border-slate-700/60 rounded-2xl rounded-bl-sm px-4 py-3 shadow-md flex items-center gap-2">
+        <span className="text-[11px] text-cyan-300 font-medium">AIDA está escribiendo</span>
+        <div className="flex items-center gap-1">
+          {[0, 1, 2].map((d) => (
+            <span
+              key={d}
+              className="w-1.5 h-1.5 bg-cyan-400 rounded-full"
+              style={{
+                animation: "whatsappBounce 1.2s infinite ease-in-out",
+                animationDelay: `${d * 180}ms`,
+              }}
+            />
+          ))}
         </div>
-        <p
-          className="text-[11px] text-slate-400 italic"
-          style={{ animation: "fadeIn 0.4s ease-out", key: fraseIdx } as any}
-        >
-          💭 {FRASES_PENSANDO[fraseIdx]}
-        </p>
       </div>
     </div>
   );
 }
 
-// ─── BURBUJA DE PENSAMIENTO REAL ─────────────────────────────────
-// Muestra el razonamiento interno real de AIDA (chain-of-thought)
-function BurbujaRazonamiento({ pensamiento }: { pensamiento: string }) {
-  const [expandido, setExpandido] = useState(true);
+// ─── RENDER DE MARKDOWN SIMPLE CON EFECTO TYPEWRITER ─────
+function TextoAgente({ texto, animate }: { texto: string; animate?: boolean }) {
+  const [displayedLen, setDisplayedLen] = useState(animate ? 0 : texto.length);
+  const yaAnimado = useRef(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setExpandido(false), 5000);
-    return () => clearTimeout(t);
-  }, []);
+    if (!animate || yaAnimado.current) {
+      setDisplayedLen(texto.length);
+      return;
+    }
+    setDisplayedLen(0);
+    let current = 0;
+    const interval = setInterval(() => {
+      // Revelado dinámico suave estilo chat
+      current += 3;
+      if (current >= texto.length) {
+        current = texto.length;
+        yaAnimado.current = true;
+        clearInterval(interval);
+      }
+      setDisplayedLen(current);
+    }, 12);
+    return () => clearInterval(interval);
+  }, [texto, animate]);
 
-  return (
-    <div className="flex gap-2 items-start" style={{ animation: "fadeIn 0.4s ease-out" }}>
-      <div className="w-7 h-7 shrink-0 bg-violet-600/20 border border-violet-500/40 rounded-full flex items-center justify-center text-sm mt-1">
-        💭
-      </div>
-      <div className="max-w-[85%]">
-        <button
-          onClick={() => setExpandido(!expandido)}
-          className="flex items-center gap-2 text-[10px] text-violet-400 font-bold uppercase tracking-widest mb-1 hover:text-violet-300 transition-colors"
-        >
-          <span style={{ animation: expandido ? "none" : "none" }}>👁</span>
-          Pensamiento interno de AIDA
-          <span className="text-violet-500">{expandido ? "▲" : "▼"}</span>
-        </button>
-        {expandido && (
-          <div
-            className="bg-violet-950/50 border border-violet-500/20 rounded-2xl rounded-tl-sm px-4 py-3"
-            style={{ animation: "fadeIn 0.3s ease-out" }}
-          >
-            <p className="text-[11px] text-violet-300/80 italic leading-relaxed">{pensamiento}</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── RENDER DE MARKDOWN SIMPLE ───────────────────────────
-function TextoAgente({ texto }: { texto: string }) {
+  const visibleText = texto.slice(0, displayedLen);
   // Procesar negrita **texto** y saltos de línea
-  const partes = texto.split(/(\*\*[^*]+\*\*)/g);
+  const partes = visibleText.split(/(\*\*[^*]+\*\*)/g);
   return (
     <p className="text-xs leading-relaxed whitespace-pre-wrap">
       {partes.map((parte, i) => {
@@ -191,6 +153,12 @@ function TextoAgente({ texto }: { texto: string }) {
         }
         return <span key={i}>{parte}</span>;
       })}
+      {animate && !yaAnimado.current && displayedLen < texto.length && (
+        <span
+          className="inline-block w-1.5 h-3.5 bg-cyan-400 ml-0.5 rounded-sm align-middle"
+          style={{ animation: "typingCursor 0.6s infinite" }}
+        />
+      )}
     </p>
   );
 }
@@ -279,6 +247,13 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     setMounted(true); // El portal solo se monta en el cliente
     setMensajes([]);
   }, [rol]);
+
+  // Mantener el input de chat siempre enfocado para escribir sin tener que volver a hacer clic
+  useEffect(() => {
+    if (abierto && vista === "chat") {
+      setTimeout(() => inputRef.current?.focus(), 150);
+    }
+  }, [abierto, vista]);
 
   // ─── WEBSOCKET ─────────────────────────────────────────
   useEffect(() => {
@@ -401,6 +376,9 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       const esHoy = fecha === hoyStr;
       const minActual = ahora.getHours() * 60 + ahora.getMinutes() + 15;
 
+      const [fAño, fMes, fDia] = fecha.split('-').map(Number);
+      const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+
       const requiereAyuno = examen ? /sangre|lipid|lipíd|lipidico|glucosa|ayuno|hemograma|biometr/i.test(examen) : false;
 
       // Si es hoy, y el examen requiere ayuno, y ya pasó el mediodía: no hay horarios disponibles
@@ -408,8 +386,17 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         return [];
       }
 
-      const rangos = requiereAyuno
-        ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }] // Solo mañana por ayuno
+      // Si es hoy domingo y ya pasó el mediodía (12:00): no hay horarios disponibles
+      if (esHoy && esDomingo && minActual >= 12 * 60) {
+        return [];
+      }
+
+      const rangos = (esDomingo && requiereAyuno)
+        ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }]
+        : esDomingo
+        ? [{ inicio: 7 * 60 + 30, fin: 12 * 60 }]
+        : requiereAyuno
+        ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }]
         : [
           { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
           { inicio: 14 * 60, fin: 18 * 60 }
@@ -436,12 +423,29 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
 
       return libres;
     } catch {
-      return ["07:30", "08:00", "09:00", "14:00"];
+      const [fAño, fMes, fDia] = fecha.split('-').map(Number);
+      const esDom = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+      return esDom ? ["07:30", "08:30", "09:30", "11:00"] : ["07:30", "08:00", "09:00", "14:00"];
     }
   };
 
   // ─── MODIFICAR CITA EXISTENTE EN LUGAR DE DUPLICAR ─────────────
   const modificarCitaExistente = async (idCita: string, form: CitaForm) => {
+    // 0. Validación de horario de atención en el frontend
+    const [fAño, fMes, fDia] = (form.fecha || "").split('-').map(Number);
+    const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+    const horaLimite = esDomingo ? "12:00" : "18:00";
+
+    if (form.hora && (form.hora < "07:30" || form.hora > horaLimite)) {
+      setMood("alert");
+      const msgHorario = esDomingo
+        ? `⚠️ Los domingos atendemos solo hasta medio día (**07:30 a 12:00 hrs**). La hora **${form.hora}** no está disponible.`
+        : `⚠️ La hora **${form.hora}** está fuera del horario de atención del laboratorio (**07:30 a 18:00 hrs**).`;
+      push(agente(msgHorario, "error"));
+      setFlujo("idle");
+      return;
+    }
+
     setFlujo("creando");
     setMood("confirm");
     try {
@@ -491,13 +495,23 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     const nombre = localStorage.getItem("pacienteName") ?? "";
 
     // 0. Validación de horario de atención en el frontend
-    if (form.hora < "07:30" || form.hora > "18:00") {
+    const [fAño, fMes, fDia] = (form.fecha || "").split('-').map(Number);
+    const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+    const horaLimite = esDomingo ? "12:00" : "18:00";
+
+    if (form.hora < "07:30" || form.hora > horaLimite) {
       setMood("alert");
+      const msgHorario = esDomingo
+        ? `⚠️ Los domingos atendemos solo medio día (**07:30 a 12:00 hrs**). La hora **${form.hora}** no está disponible.`
+        : `⚠️ La hora **${form.hora}** está fuera del horario de atención del laboratorio (**07:30 a 18:00 hrs**).`;
+      const opciones = esDomingo
+        ? ["07:30", "08:00", "09:00", "10:00", "11:00", "11:30"]
+        : ["07:30", "08:00", "08:30", "09:00", "10:00", "14:00"];
       push(
         agente(
-          `⚠️ La hora **${form.hora}** está fuera del horario de atención del laboratorio (**07:30 a 18:00 hrs**).\n\nTe sugiero agendar a las **07:30** o **08:00**. ¿Deseas elegir un horario válido?`,
+          `${msgHorario}\n\nTe sugiero agendar en un horario de atención válido. ¿Deseas elegir alguna de estas opciones?`,
           "opciones",
-          { opciones: ["07:30", "08:00", "08:30", "09:00", "10:00", "14:00"] }
+          { opciones }
         )
       );
       setFlujo("esperando_hora");
@@ -533,6 +547,19 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         setTimeout(() => setMood("idle"), 3000);
         setFlujo("idle");
         setCitaForm({});
+
+        // Sincronizar reinicio de slots en la sesión del backend
+        fetchAuth(`${API_URL}/agente-ia/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mensaje: "__CITA_REGISTRADA__",
+            rol,
+            sessionId: sessionId.current,
+            pacienteCorreo: correo,
+            nombrePaciente: nombre,
+          }),
+        }).catch(() => {});
       } else {
         const data = await res.json().catch(() => ({}));
         setMood("alert");
@@ -601,34 +628,97 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
   const handleOpcion = async (opcion: string) => {
     push(usuario(opcion));
 
-    if (opcion.includes("Modificar cita existente")) {
+    if (opcion.includes("Modificar cita existente") || opcion === "🔄 Modificar cita") {
       const form = citaForm as any;
       if (form?.idCitaExistente && form?.fecha && form?.hora) {
         push(agente("⏳ Actualizando tu cita..."));
         await modificarCitaExistente(form.idCitaExistente, form);
         return;
       } else {
-        try {
-          const correo = localStorage.getItem("pacienteEmail") ?? "";
-          const res = await fetchAuth(`${API_URL}/citas/paciente/${correo}`);
-          if (res.ok) {
-            const citas = await res.json();
-            const citaMismoDia = citas.find((c: any) => c.fecha === form.fecha && c.estado !== 'cancelada');
-            if (citaMismoDia) {
-              push(agente("⏳ Actualizando tu cita..."));
-              await modificarCitaExistente(citaMismoDia._id, form);
-              return;
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        }
+        push(agente("¿Qué dato deseas modificar de tu cita? Selecciona una opción:", "opciones", {
+          opciones: ["✏️ Cambiar horario", "📅 Elegir otra fecha", "❌ Cancelar cita"]
+        }));
+        return;
       }
     }
 
-    if (opcion === "📅 Elegir otra fecha" || opcion === "📅 Elegir otra fecha") {
+    if (opcion.includes("Ver mis resultados") || opcion.includes("Ver resultados")) {
+      push(agente("📊 Tus análisis y reportes clínicos se encuentran listos para consultar o descargar en PDF en la sección **Resultados** de tu panel de paciente.\n\n¿Deseas acceder ahora a tus resultados?", "opciones", {
+        opciones: ["📂 Ir a Resultados Clínicos", "📅 Programar nueva cita"]
+      }));
+      return;
+    }
+
+    if (opcion.includes("Ir a Resultados Clínicos")) {
+      if (typeof window !== "undefined") {
+        window.location.href = "/dashboard-paciente/resultados";
+      }
+      return;
+    }
+
+    if (opcion.includes("Exámenes disponibles") || opcion.includes("Exámenes del laboratorio")) {
+      push(agente("🔬 **Análisis clínicos que realizamos en el Laboratorio Gamboa:**\n\n• **Análisis de Sangre (Rutina)**\n• **Detección Molecular (PCR)**\n• **Análisis de Orina (Completo)**\n• **Perfil Lipídico**\n• **Prueba de Tolerancia a la Glucosa**\n\n¿Deseas programar una cita para alguno de estos estudios?", "opciones", {
+        opciones: EXAMENES
+      }));
+      setFlujo("esperando_examen");
+      return;
+    }
+
+    if (opcion.includes("Programar nueva cita") || opcion === "📅 Programar cita") {
+      iniciarFlujoCita(true);
+      return;
+    }
+
+    if (opcion.includes("Ver preparación")) {
+      push(agente("📋 **Preparación para análisis de laboratorio:**\n\n• **Ayuno:** 8 a 12 horas para análisis de sangre, perfil lipídico o glucosa (solo agua permitida).\n• **Orina:** Primera muestra de la mañana en frasco estéril.\n• **Recomendación:** Evitar alcohol y comidas copiosas la noche anterior.\n• **Puntualidad:** Llegar 10 minutos antes con cédula de identidad."));
+      return;
+    }
+
+    if (opcion.includes("Cancelar cita")) {
+      try {
+        const correo = localStorage.getItem("pacienteEmail") ?? "";
+        const res = await fetchAuth(`${API_URL}/citas/paciente/${correo}`);
+        if (res.ok) {
+          const citas = await res.json();
+          const hoyStr = new Date().toISOString().split('T')[0];
+          const citaActiva = citas.find((c: any) => c.fecha >= hoyStr && c.estado !== 'cancelada');
+          if (citaActiva) {
+            await fetchAuth(`${API_URL}/citas/${citaActiva._id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ estado: "cancelada" }),
+            });
+            push(agente(`Tu cita para **${citaActiva.examen}** ha sido cancelada correctamente. ¿Deseas programar una nueva cita?`, "opciones", {
+              opciones: ["📅 Programar cita", "⏰ Horarios"]
+            }));
+            setFlujo("idle");
+            setCitaForm({});
+            return;
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      push(agente("Tu cita ha sido cancelada. ¿Puedo ayudarte con algo más? 😊"));
+      setFlujo("idle");
+      setCitaForm({});
+      return;
+    }
+
+    if (opcion === "📅 Elegir otra fecha") {
       push(agente("Selecciona una nueva fecha:", "fecha"));
       setFlujo("esperando_fecha");
+      return;
+    }
+
+    if (opcion === "✏️ Cambiar horario") {
+      setFlujo("esperando_hora");
+      const fechaParaHorarios = citaForm.fecha || new Date().toISOString().split('T')[0];
+      const libres = await calcularHorariosLibres(fechaParaHorarios, citaForm.examen);
+      setHorariosDisp(libres);
+      const [fAño, fMes, fDia] = fechaParaHorarios.split('-').map(Number);
+      const esDom = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+      push(agente(`Selecciona un nuevo horario disponible dentro de nuestra atención (${esDom ? "07:30 a 12:00" : "07:30 a 18:00"}):`, "opciones", { opciones: libres }));
       return;
     }
 
@@ -654,7 +744,9 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         push(agente("Cita cancelada. ¿Puedo ayudarte con algo más? 😊"));
       } else if (opcion === "✏️ Cambiar horario") {
         setFlujo("esperando_hora");
-        push(agente("Claro, selecciona un nuevo horario dentro del horario de atención (07:30 a 18:00):", "opciones", { opciones: horariosDisp }));
+        const [fAño, fMes, fDia] = (citaForm.fecha || "").split('-').map(Number);
+        const esDom = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+        push(agente(`Claro, selecciona un nuevo horario dentro del horario de atención (${esDom ? "07:30 a 12:00" : "07:30 a 18:00"}):`, "opciones", { opciones: horariosDisp }));
       }
     } else {
       await enviarAlBackend(opcion);
@@ -739,6 +831,12 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
             pensamiento: data.pensamiento || "",
             dataCita: formCompleto
           }));
+        } else if (data.accion === "CITA_REGISTRADA") {
+          setFlujo("idle");
+          setCitaForm({});
+          push(agente(data.respuesta, "exito", {
+            pensamiento: data.pensamiento || ""
+          }));
         }
       } else if ((data.opciones && data.opciones.length > 0) || (data.opcionesExamen && data.opcionesExamen.length > 0)) {
         push(agente(data.respuesta, "opciones", {
@@ -766,6 +864,7 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
       setTimeout(() => setMood("idle"), 2000);
     } finally {
       setCargando(false);
+      setTimeout(() => inputRef.current?.focus(), 80);
     }
   };
 
@@ -777,6 +876,22 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
     setInput("");
     inputRef.current?.focus();
     push(usuario(texto));
+
+    // Si el usuario estaba en confirmación y escribe 'confirma la cita', 'listo', 'sí', etc.:
+    if (flujo === "confirmando") {
+      const normTexto = texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const esConfirmacion = /\bconfirm(a|o|ar|acion|ame|ala|alo|ando)?\b/i.test(normTexto) ||
+        /^(listo|si|dale|ok|okay|perfecto|adelante|bueno|de acuerdo|bien|ya|hecho|registralo|registra|registre|guardar|guarda)$/i.test(normTexto) ||
+        /^(si|dale|ok|listo|confirmo|bien)\s+(por favor|porfa|adelante|gracias|la cita|mi cita|cita|bien|listo)?$/i.test(normTexto) ||
+        /(guardar|guarda|registrar|registra|agendar|agenda|proceder|procede)\s+(la\s+cita|mi\s+cita|el\s+turno|turno)?/i.test(normTexto);
+
+      if (esConfirmacion && citaForm.fecha && citaForm.hora && citaForm.examen) {
+        push(agente("⏳ Registrando tu cita..."));
+        await crearCita(citaForm as CitaForm);
+        inputRef.current?.focus();
+        return;
+      }
+    }
 
     await enviarAlBackend(texto);
     inputRef.current?.focus();
@@ -873,10 +988,6 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
               <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 scrollbar-thin">
                 {mensajes.map((msg, idx) => (
                   <>
-                    {/* Mostrar pensamiento real de AIDA antes de la respuesta */}
-                    {msg.de === "agente" && msg.pensamiento && (
-                      <BurbujaRazonamiento key={`p-${msg.id}`} pensamiento={msg.pensamiento} />
-                    )}
                     <BurbujaMensaje
                       key={msg.id}
                       msg={msg}
@@ -890,8 +1001,8 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
                   </>
                 ))}
 
-                {/* Panel de pensamiento visible */}
-                <PanelPensamiento visible={cargando} />
+                {/* Indicador de escritura estilo WhatsApp */}
+                <IndicadorEscribiendo visible={cargando} />
 
                 <div ref={bottomRef} />
               </div>
@@ -1067,6 +1178,28 @@ export default function AgenteIA({ rol }: { rol: Rol }) {
         @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
         @keyframes ping-once { 0%{transform:scale(1);box-shadow:0 0 0 0 rgba(6,182,212,.7)} 70%{transform:scale(1.1);box-shadow:0 0 0 15px rgba(6,182,212,0)} 100%{transform:scale(1)} }
         @keyframes pulse-brain { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.1);opacity:0.8} }
+        @keyframes whatsappBounce {
+          0%, 60%, 100% {
+            transform: translateY(0);
+            opacity: 0.35;
+          }
+          30% {
+            transform: translateY(-5px);
+            opacity: 1;
+          }
+        }
+        @keyframes typingDot {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30% { transform: translateY(-6px); opacity: 1; }
+        }
+        @keyframes messageAppear {
+          from { opacity: 0; transform: translateY(8px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes typingCursor {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
       `}</style>
     </>,
     document.body
@@ -1113,7 +1246,7 @@ function BurbujaMensaje({
           {esUsuario ? (
             <p className="text-xs leading-relaxed">{msg.texto}</p>
           ) : (
-            <TextoAgente texto={msg.texto} />
+            <TextoAgente texto={msg.texto} animate={isLast} />
           )}
           <p className={`text-[10px] mt-1 text-right ${esUsuario ? "text-cyan-900/60" : "text-slate-500"}`}>
             {msg.hora}

@@ -269,7 +269,11 @@ export default function ConfiguracionPaciente() {
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900 relative w-full">
         <div className="bg-slate-800/50 border-b border-slate-800 p-4 px-6 md:px-8 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden text-2xl text-cyan-400 focus:outline-none">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="text-2xl text-cyan-400 hover:text-cyan-300 focus:outline-none transition-colors"
+              title="Alternar menú"
+            >
               ≡
             </button>
             <div>

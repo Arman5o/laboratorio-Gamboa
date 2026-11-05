@@ -315,7 +315,7 @@ export default function SubirResultadosAdmin() {
               </div>
               <div className="text-right text-xs font-bold border-l-2 border-black pl-4">
                 <p>HORARIO DE ATENCIÓN:</p>
-                <p>LUNES A VIERNES 07:30 - 18:00 HRS</p>
+                <p>LUN - SÁB 07:30 - 18:00 | DOM 07:30 - 12:00</p>
                 <p className="mt-2 text-sm">FECHA: {citaActiva.fecha.split('-').reverse().join('/')}</p>
               </div>
             </div>

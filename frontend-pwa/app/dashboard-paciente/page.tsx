@@ -120,8 +120,14 @@ export default function DashboardPaciente() {
       <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-slate-900 p-4 md:p-10">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400 mr-4">≡</button>
+        <div className="flex items-center gap-4 mb-8">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="text-2xl text-cyan-400 hover:text-cyan-300 focus:outline-none transition-colors"
+            title="Alternar menú"
+          >
+            ≡
+          </button>
           <div>
             <h1 className="text-2xl font-bold text-slate-100">
               Bienvenido, <span className="text-cyan-400">{userName.split(" ")[0]}</span> 👋
@@ -218,9 +224,10 @@ export default function DashboardPaciente() {
               <span className="text-xl">🧬</span> Ver Resultados
             </Link>
             <div className="mt-auto border-t border-slate-700 pt-4">
-              <p className="text-[11px] text-slate-500 uppercase tracking-widest mb-2">Horario de atención</p>
-              <p className="text-sm text-slate-300">🕗 Lunes a Viernes</p>
-              <p className="text-sm text-slate-300">07:30 — 18:00 hrs</p>
+              <p className="text-[11px] text-slate-500 uppercase tracking-widest mb-1.5">Horario de atención</p>
+              <p className="text-sm font-semibold text-cyan-400">📅 Lunes a Domingo (Todos los días)</p>
+              <p className="text-xs text-slate-300 mt-1">Lun — Sáb: 07:30 a 18:00 hrs</p>
+              <p className="text-xs text-amber-300/90">Domingos: 07:30 a 12:00 hrs (Medio día)</p>
             </div>
           </div>
 

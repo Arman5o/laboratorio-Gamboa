@@ -141,11 +141,15 @@ export default function ProgramarCita() {
         const aMinutos = (h: string) => { const [horas, mins] = h.split(':').map(Number); return horas * 60 + mins; };
         const minAHoras = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
+        const [fAño, fMes, fDia] = formData.fecha.split('-').map(Number);
+        const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+        const maxMinutos = esDomingo ? 12 * 60 : 18 * 60;
+
         let minActual = aMinutos(horaIdeal);
         let libre = false;
         let horaSugeridaFinal = horaIdeal;
 
-        while (!libre && minActual < 18 * 60) {
+        while (!libre && minActual < maxMinutos) {
           horaSugeridaFinal = minAHoras(minActual);
           const conflicto = citasOcupadas.some((c: any) => Math.abs(aMinutos(c.hora) - minActual) < 30);
           if (!conflicto) {
@@ -156,7 +160,7 @@ export default function ProgramarCita() {
         }
 
         setHorarioProactivo(horaSugeridaFinal);
-        setMensajeIA(`Para el ${formData.fecha}, el agente IA sugiere agendar a las ${horaSugeridaFinal} por menor congestión.`);
+        setMensajeIA(`Para el ${formData.fecha}${esDomingo ? " (Domingo atención hasta mediodía)" : ""}, el agente IA sugiere agendar a las ${horaSugeridaFinal} por menor congestión.`);
 
       } catch (error) {
         console.error(error);
@@ -175,8 +179,16 @@ export default function ProgramarCita() {
     setPanelMismoDia(false);
     setErrorValidacion(null);
 
-    if (formData.hora < "07:30" || formData.hora > "18:00") {
-      setErrorValidacion("El horario de atención es estrictamente de 07:30 a 18:00 hrs.");
+    const [fAño, fMes, fDia] = formData.fecha.split('-').map(Number);
+    const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+    const horaMax = esDomingo ? "12:00" : "18:00";
+
+    if (formData.hora < "07:30" || formData.hora > horaMax) {
+      setErrorValidacion(
+        esDomingo
+          ? "Los domingos la atención es solo hasta el mediodía (07:30 a 12:00 hrs)."
+          : "El horario de atención es estrictamente de 07:30 a 18:00 hrs."
+      );
       setIsSubmitting(false);
       return;
     }
@@ -234,6 +246,9 @@ export default function ProgramarCita() {
     }
   };
 
+  const [fAño, fMes, fDia] = formData.fecha ? formData.fecha.split('-').map(Number) : [0, 0, 0];
+  const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+
   return (
     <div className="flex h-screen bg-slate-900 text-slate-200 font-sans overflow-hidden">
 
@@ -282,10 +297,25 @@ export default function ProgramarCita() {
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-slate-900 p-4 md:p-8">
+        {/* Header con botón de menú */}
+        <div className="max-w-5xl mx-auto w-full mb-6 flex items-center gap-4">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="text-2xl text-cyan-400 hover:text-cyan-300 focus:outline-none transition-colors"
+            title="Alternar menú"
+          >
+            ≡
+          </button>
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-slate-100 uppercase tracking-wider">Programar Cita</h1>
+            <p className="text-xs text-slate-400 mt-0.5">Reserva tu turno para análisis clínicos en Laboratorio Gamboa</p>
+          </div>
+        </div>
+
         <div className="max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
 
           <div className="lg:col-span-3 bg-slate-800 border border-slate-700 rounded-xl p-8 shadow-lg">
-            <h1 className="text-lg font-bold text-slate-100 uppercase mb-6">Programar Reserva Biológica</h1>
+            <h2 className="text-lg font-bold text-slate-100 uppercase mb-6">Programar Reserva Biológica</h2>
 
             {errorValidacion && (
               <div className="mb-6 bg-rose-500/10 border border-rose-500/40 rounded-xl p-4 text-rose-300 text-sm flex items-center gap-3">
@@ -338,8 +368,18 @@ export default function ProgramarCita() {
                   <input type="date" required min={fechaMinima} value={formData.fecha} onChange={(e) => setFormData({ ...formData, fecha: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" />
                 </div>
                 <div>
-                  <label className="block text-slate-400 text-xs mb-2 uppercase tracking-widest">Hora (07:30 a 18:00)</label>
-                  <input type="time" required min="07:30" max="18:00" value={formData.hora} onChange={(e) => setFormData({ ...formData, hora: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" />
+                  <label className="block text-slate-400 text-xs mb-2 uppercase tracking-widest">
+                    {esDomingo ? "Hora Domingo (07:30 a 12:00)" : "Hora (07:30 a 18:00)"}
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    min="07:30"
+                    max={esDomingo ? "12:00" : "18:00"}
+                    value={formData.hora}
+                    onChange={(e) => setFormData({ ...formData, hora: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
+                  />
                 </div>
               </div>
               <button type="submit" disabled={isSubmitting} className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 text-slate-900 font-bold py-4 rounded-lg shadow-lg cursor-pointer">

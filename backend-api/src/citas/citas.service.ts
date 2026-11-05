@@ -44,7 +44,12 @@ export class CitasService {
     
     const requiereAyuno = examen ? /sangre|lipid|lipíd|glucosa|ayuno/i.test(examen) : false;
 
-    const rangos = requiereAyuno
+    const [fAño, fMes, fDia] = fecha.split('-').map(Number);
+    const esDomingo = new Date(fAño, fMes - 1, fDia).getDay() === 0;
+
+    const rangos = esDomingo
+      ? [{ inicio: 7 * 60 + 30, fin: 12 * 60 }] // Domingos hasta mediodía
+      : requiereAyuno
       ? [{ inicio: 7 * 60 + 30, fin: 11 * 60 + 30 }]
       : [
           { inicio: 7 * 60 + 30, fin: 11 * 60 + 30 },
@@ -82,6 +87,20 @@ export class CitasService {
       throw new HttpException({
         message: 'No puedes programar una cita en una fecha pasada.',
         tipoError: 'FECHA_PASADA'
+      }, HttpStatus.BAD_REQUEST);
+    }
+
+    // 0.1 VALIDAR HORARIOS DE ATENCIÓN (LUNES A SÁBADO 07:30 - 18:00, DOMINGOS 07:30 - 12:00)
+    const [fAñoCita, fMesCita, fDiaCita] = (datos.fecha || '').split('-').map(Number);
+    const esDomingoCita = new Date(fAñoCita, fMesCita - 1, fDiaCita).getDay() === 0;
+    const horaMaxPermitida = esDomingoCita ? '12:00' : '18:00';
+
+    if (datos.hora < '07:30' || datos.hora > horaMaxPermitida) {
+      throw new HttpException({
+        message: esDomingoCita
+          ? 'Los domingos la atención es únicamente hasta mediodía (07:30 a 12:00 hrs).'
+          : 'El horario de atención es de 07:30 a 18:00 hrs.',
+        tipoError: 'HORARIO_INVALIDO',
       }, HttpStatus.BAD_REQUEST);
     }
     

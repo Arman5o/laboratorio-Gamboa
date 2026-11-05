@@ -122,16 +122,22 @@ export default function ResultadosClinicos() {
       return;
     }
 
-    // 2. Validar fuera de horario de atención (07:30 - 18:00)
+    // 2. Validar fuera de horario de atención (07:30 - 18:00 o 07:30 - 12:00 si es domingo)
+    const [fAño, fMes, fDia] = nuevaFecha.split('-').map(Number);
+    const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
     const [h, m] = nuevaHora.split(':').map(Number);
     const minTotal = h * 60 + m;
     const minApertura = 7 * 60 + 30; // 07:30
-    const minCierre = 18 * 60;       // 18:00
+    const minCierre = esDomingo ? 12 * 60 : 18 * 60; // Domingo hasta mediodía
 
     const requiereAyuno = /sangre|lipid|lipíd|glucosa|ayuno/i.test(examen);
 
     if (minTotal < minApertura || minTotal > minCierre) {
-      setErrorEdicion(`La hora ${nuevaHora} está fuera del horario de atención del laboratorio (07:30 a 18:00 hrs).`);
+      setErrorEdicion(
+        esDomingo
+          ? `Los domingos el laboratorio atiende solo hasta el mediodía (07:30 a 12:00 hrs). La hora ${nuevaHora} no está permitida.`
+          : `La hora ${nuevaHora} está fuera del horario de atención del laboratorio (07:30 a 18:00 hrs).`
+      );
       setSugerenciaEdicion(requiereAyuno ? "08:00" : "09:30");
       return;
     }
@@ -170,8 +176,16 @@ export default function ResultadosClinicos() {
     if (!citaEditando) return;
     
     // Validar antes de guardar
-    if (citaEditando.hora < "07:30" || citaEditando.hora > "18:00") {
-      setErrorEdicion("El horario de atención es estrictamente de 07:30 a 18:00 hrs.");
+    const [fAño, fMes, fDia] = (citaEditando.fecha || "").split('-').map(Number);
+    const esDomingo = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+    const horaMax = esDomingo ? "12:00" : "18:00";
+
+    if (citaEditando.hora < "07:30" || citaEditando.hora > horaMax) {
+      setErrorEdicion(
+        esDomingo
+          ? "Los domingos la atención es solo hasta el mediodía (07:30 a 12:00 hrs)."
+          : "El horario de atención es estrictamente de 07:30 a 18:00 hrs."
+      );
       setSugerenciaEdicion("08:00");
       return;
     }
@@ -284,10 +298,16 @@ export default function ResultadosClinicos() {
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900 relative w-full">
-        {/* Header responsive con botón menú para móviles */}
+        {/* Header responsive con botón menú */}
         <div className="bg-slate-800/50 border-b border-slate-800 p-4 px-6 md:px-8 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden text-2xl text-cyan-400 focus:outline-none">≡</button>
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="text-2xl text-cyan-400 hover:text-cyan-300 focus:outline-none transition-colors"
+              title="Alternar menú"
+            >
+              ≡
+            </button>
             <div>
               <h1 className="text-base md:text-lg font-bold text-slate-100 tracking-wider uppercase">EXPEDIENTE CLÍNICO</h1>
               <p className="text-[11px] md:text-xs text-cyan-400 font-mono tracking-widest mt-0.5 truncate max-w-[200px] sm:max-w-md">Historial: {userEmail}</p>
@@ -400,9 +420,21 @@ export default function ResultadosClinicos() {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 text-xs mb-1.5 uppercase tracking-wider">Hora (07:30 a 18:00)</label>
+                  <label className="block text-slate-400 text-xs mb-1.5 uppercase tracking-wider">
+                    {(() => {
+                      const [fAño, fMes, fDia] = (citaEditando.fecha || "").split('-').map(Number);
+                      const esDom = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+                      return esDom ? "Hora Domingo (07:30 a 12:00)" : "Hora (07:30 a 18:00)";
+                    })()}
+                  </label>
                   <input 
                     type="time" 
+                    min="07:30"
+                    max={(() => {
+                      const [fAño, fMes, fDia] = (citaEditando.fecha || "").split('-').map(Number);
+                      const esDom = (fAño && fMes && fDia) ? new Date(fAño, fMes - 1, fDia).getDay() === 0 : false;
+                      return esDom ? "12:00" : "18:00";
+                    })()}
                     value={citaEditando.hora} 
                     onChange={(e) => {
                       const nuevaH = e.target.value;

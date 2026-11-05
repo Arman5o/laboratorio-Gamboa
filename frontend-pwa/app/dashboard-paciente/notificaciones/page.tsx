@@ -198,7 +198,13 @@ export default function NotificacionesPaciente() {
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-2xl text-cyan-400">≡</button>
+              <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="text-2xl text-cyan-400 hover:text-cyan-300 focus:outline-none transition-colors"
+                title="Alternar menú"
+              >
+                ≡
+              </button>
               <div>
                 <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
                   🔔 Notificaciones

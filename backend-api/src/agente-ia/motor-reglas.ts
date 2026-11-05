@@ -22,6 +22,12 @@ export interface CitaSlots {
   recomendaciones?: string[];
 }
 
+export interface MensajeHistorial {
+  de: string; // 'usuario' | 'agente'
+  texto: string;
+  timestamp?: number;
+}
+
 export interface ContextoSesion {
   nombre?: string;
   ultimaIntencion?: string;
@@ -29,13 +35,29 @@ export interface ContextoSesion {
   temaActual?: string;         // 'cita' | undefined
   citaSlots?: CitaSlots;       // datos de cita acumulados
   idiomaDetectado?: string;
+  historial?: MensajeHistorial[]; // Memoria temporal de la conversación
+}
+
+export function obtenerPeriodoDelDia(ahora: Date = new Date()): {
+  periodo: 'mañana' | 'tarde' | 'noche';
+  saludo: string;
+  descripcion: string;
+} {
+  const hora = ahora.getHours();
+  if (hora >= 5 && hora < 12) {
+    return { periodo: 'mañana', saludo: '¡Buenos días!', descripcion: 'mañana (día)' };
+  } else if (hora >= 12 && hora < 19) {
+    return { periodo: 'tarde', saludo: '¡Buenas tardes!', descripcion: 'tarde' };
+  } else {
+    return { periodo: 'noche', saludo: '¡Buenas noches!', descripcion: 'noche' };
+  }
 }
 
 export interface ResultadoAgente {
   pensamiento: string;
   respuesta: string;
   intencion: string;
-  accion?: 'PEDIR_EXAMEN' | 'PEDIR_FECHA' | 'PEDIR_HORA' | 'CONFIRMAR_CITA';
+  accion?: 'PEDIR_EXAMEN' | 'PEDIR_FECHA' | 'PEDIR_HORA' | 'CONFIRMAR_CITA' | 'CITA_REGISTRADA';
   citaSlots?: CitaSlots;
   opcionesExamen?: string[];
   opciones?: string[];
@@ -420,7 +442,7 @@ export function extraerExamen(texto: string): string | null {
   return lista.join(' + ');
 }
 
-function extraerFecha(texto: string, ahora: Date): string | null {
+export function extraerFecha(texto: string, ahora: Date): string | null {
   const t = norm(texto);
   const hoy = new Date(ahora);
   hoy.setHours(0, 0, 0, 0);
@@ -575,7 +597,7 @@ function extraerFecha(texto: string, ahora: Date): string | null {
   return null;
 }
 
-function extraerHora(texto: string): string | null {
+export function extraerHora(texto: string): string | null {
   if (!texto) return null;
   const pad = (n: number) => n.toString().padStart(2, '0');
   const fmt = (h: number, m: number) => `${pad(h)}:${pad(m)}`;
@@ -601,13 +623,23 @@ function extraerHora(texto: string): string | null {
     return fmt(h, m);
   }
 
-  // 2. Mediodía / Medianoche
+  // 2. Mediodía / Medianoche / Períodos generales sin hora numérica
   const tNorm = norm(limpio);
   if (/medio\s*dia|mediodia|al mediodia|12 del dia/.test(tNorm)) {
     return '12:00';
   }
   if (/medio\s*noche|medianoche|12 de la noche/.test(tNorm)) {
     return '00:00';
+  }
+  // Expresiones de preferencia horaria sin dígito específico
+  if (/^(en|por|de|durante)?\s*(la\s+)?manana$/i.test(tNorm) || /^(en|por|durante)?\s*el\s+dia$/i.test(tNorm) || /^(muy\s+)?temprano$/i.test(tNorm)) {
+    return '08:00';
+  }
+  if (/^(en|por|de|durante)?\s*(la\s+)?tarde$/i.test(tNorm)) {
+    return '15:00';
+  }
+  if (/^(en|por|de|durante)?\s*(la\s+)?noche$/i.test(tNorm)) {
+    return '20:00';
   }
 
   // Modificadores explícitos de período
@@ -802,6 +834,19 @@ function esIntencionCita(texto: string, textoFuzzy: string, contexto?: ContextoS
     return false;
   }
 
+  // Detección directa de deseo de realizarse análisis/estudios/exámenes/chequeos (incluso sin especificar cuál)
+  // Ej: "quiero realizarme unos analisis", "hacerme unos examenes", "quiero hacerme un chequeo", "necesito unos analisis"
+  const patronesAnalisis = [
+    /(quiero|quisiera|deseo|necesito|me\s+gustaria|voy\s+a|vengo\s+a|busco)\s+(hacerme|realizarme|tomarme|sacarme|hacer|agendar|programar)?\s*(unos|un|una|mis|el|los)?\s*(analisis|examenes|estudios|pruebas|laboratorios|chequeo|muestra)/i,
+    /(hacerme|realizarme|tomarme|sacarme)\s+(unos|un|una|mis)?\s*(analisis|examenes|estudios|pruebas|laboratorios|chequeo|muestra)/i,
+    /^(quiero|necesito|deseo)\s+(analisis|examenes|estudios|pruebas|laboratorio)/i,
+    /(hacer|hacerme|realizar|realizarme)\s+(analisis|examenes|estudios)/i,
+    /(agendar|programar|pedir|reservar)\s+(analisis|examenes|estudios|cita)/i,
+  ];
+  if (patronesAnalisis.some(p => p.test(t) || p.test(texto))) {
+    return true;
+  }
+
   const palabrasCita = [
     'cita', 'turno', 'agendar', 'programar', 'reservar', 'apartar',
     '预约', '挂号', '约时间', '想约',
@@ -835,12 +880,31 @@ function esIntencionCita(texto: string, textoFuzzy: string, contexto?: ContextoS
   return false;
 }
 
-function formatearFechaLegible(fecha: string): string {
+export function formatearFechaLegible(fecha: string): string {
   const [año, mes, dia] = fecha.split('-').map(Number);
   const d = new Date(año, mes - 1, dia);
   return d.toLocaleDateString('es-EC', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
+}
+
+export function esConfirmacionAfirmativa(texto: string): boolean {
+  const t = norm(texto).trim();
+  // Negaciones o cancelaciones
+  if (/\b(no|cancelar|olvidalo|espera|cambiar|cambia)\b/i.test(t)) return false;
+
+  // Frases que contienen confirma / confirmar / confirmo
+  if (/\bconfirm(a|o|ar|acion|ame|ala|alo|ando)?\b/i.test(t)) return true;
+
+  // Palabras afirmativas directas
+  if (/^(listo|si|sí|dale|ok|okay|perfecto|adelante|bueno|de acuerdo|bien|ya|hecho|registralo|registra|registre|vale|guardar|guarda|guardalo|agenda|agendalo)$/i.test(t)) return true;
+
+  // Expresiones como "si por favor", "dale confirma", "todo listo", "si confirma", "de acuerdo", "todo bien"
+  if (/^(si|sí|dale|ok|listo|bien|perfecto|todo)\s+(por favor|porfa|adelante|gracias|la cita|mi cita|cita|bien|listo)?$/i.test(t)) return true;
+
+  if (/(guardar|guarda|registrar|registra|agendar|agenda|proceder|procede)\s+(la\s+cita|mi\s+cita|el\s+turno|turno)?/i.test(t)) return true;
+
+  return false;
 }
 
 // ─── BASE DE CONOCIMIENTO Y REGLAS DE RESPUESTA INTELIGENTE ────────
@@ -859,46 +923,115 @@ interface ReglaInteligente {
   generarRespuesta: (
     idioma: ReturnType<typeof detectarIdioma>,
     nombre?: string,
-    textoOriginal?: string
+    textoOriginal?: string,
+    contexto?: ContextoSesion,
+    ahora?: Date
   ) => {
     respuesta: string;
     razonamiento: string;
-    accion?: 'PEDIR_EXAMEN' | 'PEDIR_FECHA' | 'PEDIR_HORA' | 'CONFIRMAR_CITA';
+    accion?: 'PEDIR_EXAMEN' | 'PEDIR_FECHA' | 'PEDIR_HORA' | 'CONFIRMAR_CITA' | 'CITA_REGISTRADA';
     opcionesExamen?: string[];
     opciones?: string[];
   };
 }
 
 const REGLAS_CLINICAS: ReglaInteligente[] = [
-  // 1. SALUDOS E INTERACCIÓN INICIAL
+  // 1. SALUDOS E INTERACCIÓN INICIAL (Distingue mañana, tarde y noche)
   {
     categoria: 'SALUDO',
     palabrasClave: ['hola', 'buenas', 'buenos dias', 'buenas tardes', 'buenas noches', 'que tal', 'saludos', 'hey'],
     patrones: [/^(hola|buenas|buenos|que tal|saludos|hey)/],
     palabrasChinas: ['你好', '您好', '早上好', '下午好', '晚上好', '嗨'],
-    palabrasIngles: ['hello', 'hi', 'good morning', 'good afternoon', 'hey'],
-    generarRespuesta: (idioma, nombre) => {
+    palabrasIngles: ['hello', 'hi', 'good morning', 'good afternoon', 'good evening', 'hey'],
+    generarRespuesta: (idioma, nombre, textoOriginal, contexto, ahora = new Date()) => {
       const saludoNombre = nombre ? ` ${nombre}` : '';
+      const { periodo, saludo: saludoPeriodo } = obtenerPeriodoDelDia(ahora);
+      const t = norm(textoOriginal || '');
+
+      let saludoTexto = saludoPeriodo.replace(/!$/, '');
+      let aclaracionHoraria = '';
+
+      if (t.includes('buenos dias') || t.includes('buen dia')) {
+        if (periodo === 'tarde') {
+          aclaracionHoraria = ' (aunque por la hora ya estamos en la tarde ☀️)';
+          saludoTexto = '¡Buenas tardes';
+        } else if (periodo === 'noche') {
+          aclaracionHoraria = ' (aunque por la hora ya es de noche 🌙)';
+          saludoTexto = '¡Buenas noches';
+        }
+      } else if (t.includes('buenas tardes')) {
+        if (periodo === 'mañana') {
+          aclaracionHoraria = ' (aún estamos en la mañana ☀️)';
+          saludoTexto = '¡Buenos días';
+        } else if (periodo === 'noche') {
+          aclaracionHoraria = ' (por la hora ya es de noche 🌙)';
+          saludoTexto = '¡Buenas noches';
+        }
+      } else if (t.includes('buenas noches')) {
+        if (periodo === 'mañana') {
+          aclaracionHoraria = ' (aún es de mañana ☀️)';
+          saludoTexto = '¡Buenos días';
+        } else if (periodo === 'tarde') {
+          aclaracionHoraria = ' (todavía estamos en la tarde ☀️)';
+          saludoTexto = '¡Buenas tardes';
+        }
+      }
+
       if (idioma.esChino) {
+        const saludoChino = periodo === 'mañana' ? '早上好' : periodo === 'tarde' ? '下午好' : '晚上好';
         return {
-          razonamiento: `Saludo en chino. Respuesta breve y cortés.`,
-          respuesta: `您好${saludoNombre}！👋 我是甘博亚实验室的助理 **AIDA**。请问需要帮您预约化验、查询营业时间还是查看报告？`
+          razonamiento: `Saludo en chino adaptado al momento del día: [${periodo}].`,
+          respuesta: `${saludoChino}${saludoNombre}！👋 我是甘博亚实验室的助理 **AIDA**。请问需要帮您预约化验、查询营业时间还是查看报告？`
         };
       }
       if (idioma.esIngles && !idioma.esEspanol) {
+        const saludoIngles = periodo === 'mañana' ? 'Good morning' : periodo === 'tarde' ? 'Good afternoon' : 'Good evening';
         return {
-          razonamiento: `English greeting. Short and direct assistance offer.`,
-          respuesta: `Hello${saludoNombre}! 👋 I'm **AIDA** from Lab. Gamboa. How can I help you today? I can schedule tests, check hours, or review your results.`
+          razonamiento: `English greeting with temporal awareness: [${periodo}].`,
+          respuesta: `${saludoIngles}${saludoNombre}! 👋 I'm **AIDA** from Lab. Gamboa. How can I help you today? I can schedule tests, check hours, or review your results.`
         };
       }
       const opciones = [
-        `¡Hola${saludoNombre}! 👋 Soy **AIDA**, asistente del **Laboratorio Gamboa**. ¿En qué te ayudo hoy? Puedo agendar tu cita o consultar exámenes y horarios.`,
-        `¡Hola${saludoNombre}! Qué gusto saludarte. 😊 Estoy lista para ayudarte con tus análisis de laboratorio o agendar tu cita. ¿Qué necesitas?`,
-        `¡Buen día${saludoNombre}! 👋 Aquí AIDA del Lab. Gamboa. ¿Deseas agendar una cita o consultar sobre algún examen de laboratorio?`
+        `${saludoTexto}${saludoNombre}!${aclaracionHoraria} 👋 Soy **AIDA**, asistente del **Laboratorio Gamboa**. ¿En qué te ayudo hoy? Puedo agendar tu cita o consultar exámenes y horarios.`,
+        `${saludoTexto}${saludoNombre}!${aclaracionHoraria} Qué gusto saludarte. 😊 Estoy lista para ayudarte con tus análisis de laboratorio o agendar tu cita. ¿Qué necesitas?`,
+        `${saludoTexto}${saludoNombre}!${aclaracionHoraria} 👋 Aquí AIDA del Lab. Gamboa. ¿Deseas agendar una cita o consultar sobre algún examen de laboratorio?`
       ];
       return {
-        razonamiento: `Saludo breve, amigable y directo sin textos largos.`,
-        respuesta: elegirVariacion(opciones)
+        razonamiento: `Saludo adaptado al momento del día: [${periodo}].`,
+        respuesta: elegirVariacion(opciones),
+        opciones: ['📅 Programar cita', '🧪 Exámenes disponibles', '⏰ Horarios de atención']
+      };
+    }
+  },
+
+  // 1.05 SOLICITUD DIRECTA DE ANÁLISIS CLÍNICOS O CHEQUEOS ("quiero realizarme unos analisis", etc.)
+  {
+    categoria: 'SOLICITUD_ANALISIS_O_CITA',
+    palabrasClave: [
+      'quiero realizarme unos analisis', 'quiero hacerme unos analisis', 'quiero hacerme analisis',
+      'quiero hacerme examenes', 'quiero realizarme examenes', 'necesito hacerme analisis',
+      'necesito hacerme examenes', 'hacerme unos analisis', 'hacerme unos examenes',
+      'quiero unos analisis', 'quiero unos examenes', 'quiero analisis', 'necesito analisis',
+      'quiero examenes', 'hacerme chequeo', 'quiero un chequeo', 'necesito un chequeo',
+      'hacerme analisis', 'realizarme analisis', 'hacerme estudios', 'realizarme estudios',
+      'sacarme analisis', 'sacarme sangre', 'hacerme prueba'
+    ],
+    patrones: [
+      /(quiero|quisiera|deseo|necesito|me\s+gustaria|busco|vengo\s+a)\s+(hacerme|realizarme|tomarme|sacarme|hacer|agendar|programar)?\s*(unos|un|una|mis)?\s*(analisis|examenes|estudios|pruebas|laboratorios|chequeo)/i,
+      /(hacerme|realizarme|tomarme|sacarme)\s+(unos|un|una|mis)?\s*(analisis|examenes|estudios|pruebas|laboratorios|chequeo)/i,
+      /^(quiero|necesito|deseo)\s+(analisis|examenes|estudios|pruebas)/i
+    ],
+    palabrasChinas: ['想做化验', '想做检查', '要查血', '要化验', '我想做检查', '抽血'],
+    palabrasIngles: ['i want tests', 'i want lab tests', 'need lab test', 'schedule test', 'get blood work'],
+    generarRespuesta: (idioma, nombre, textoOriginal, contexto, ahora = new Date()) => {
+      const { saludo } = obtenerPeriodoDelDia(ahora);
+      if (contexto) contexto.temaActual = 'cita';
+      return {
+        razonamiento: 'El paciente desea realizarse análisis clínicos en el laboratorio. Inicio el flujo de agendamiento y presento el catálogo de exámenes disponibles.',
+        respuesta: `${saludo} ¡Con mucho gusto te ayudo a programar tu cita para tus análisis! ¿Qué tipo de estudio necesitas realizarte?`,
+        accion: 'PEDIR_EXAMEN',
+        opcionesExamen: EXAMENES_OFICIALES,
+        opciones: EXAMENES_OFICIALES,
       };
     }
   },
@@ -1122,27 +1255,66 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     }
   },
 
-  // 5. HORARIOS DE ATENCIÓN
+  // 5. HORARIOS DE ATENCIÓN (Distingue día, tarde, noche y domingo)
   {
     categoria: 'HORARIOS',
-    palabrasClave: ['horario', 'hora', 'cuando abren', 'cuando atienden', 'a que hora', 'estan abiertos', 'dias atienden', 'feriados', 'sabado'],
-    patrones: [/(horario|hora|cuando|abierto|atienden|disponible|abren|cierran)/],
-    palabrasChinas: ['营业时间', '上班时间', '几点开门', '几点关门', '工作时间', '周末开门吗'],
-    palabrasIngles: ['hours', 'opening hours', 'what time', 'when are you open', 'schedule'],
-    generarRespuesta: (idioma) => {
+    palabrasClave: ['horario', 'hora', 'cuando abren', 'cuando atienden', 'a que hora', 'estan abiertos', 'dias atienden', 'feriados', 'sabado', 'domingo', 'fin de semana', 'noche', 'de noche', 'en la noche', 'tarde', 'en la tarde', 'manana', 'en la manana'],
+    patrones: [/(horario|hora|cuando|abierto|atienden|disponible|abren|cierran|domingo|noche|tarde|manana)/i],
+    palabrasChinas: ['营业时间', '上班时间', '几点开门', '几点关门', '工作时间', '周末开门吗', '周日', '晚上开门吗', '下午开门吗'],
+    palabrasIngles: ['hours', 'opening hours', 'what time', 'when are you open', 'schedule', 'sunday', 'night', 'afternoon'],
+    generarRespuesta: (idioma, nombre, textoOriginal, contexto, ahora = new Date()) => {
+      const t = norm(textoOriginal || '');
+
+      // Pregunta específica sobre la noche
+      if (t.includes('noche') || t.includes('de noche') || t.includes('en la noche')) {
+        return {
+          razonamiento: 'Consulta sobre horario en la noche. Se aclara que no hay atención nocturna.',
+          respuesta: `🌙 **No atendemos en la noche.** Nuestro horario de atención es de **lunes a sábado de 07:30 a 18:00 hrs**, y los **domingos hasta mediodía (07:30 a 12:00 hrs)**.\n\n¿Te gustaría programar tu cita para la mañana o la tarde?`,
+          opciones: ['📅 Programar cita', '🧪 Exámenes disponibles']
+        };
+      }
+
+      // Pregunta específica sobre domingo en la tarde
+      if ((t.includes('domingo') && t.includes('tarde')) || (t.includes('domingos') && t.includes('tarde'))) {
+        return {
+          razonamiento: 'Consulta sobre domingo en la tarde. Se aclara que los domingos solo se atiende hasta mediodía.',
+          respuesta: `⚠️ **Los domingos atendemos únicamente hasta mediodía (07:30 a 12:00 hrs).** No abrimos en la tarde de los domingos. De lunes a sábado sí atendemos por la tarde hasta las 18:00 hrs. ¿Deseas agendar en domingo por la mañana o para lunes?`,
+          opciones: ['📅 Programar cita', '⏰ Horarios completos']
+        };
+      }
+
+      // Pregunta específica sobre la tarde
+      if (t.includes('tarde') || t.includes('en la tarde') || t.includes('por la tarde')) {
+        return {
+          razonamiento: 'Consulta sobre horario en la tarde. Se detalla atención vespertina (Mon-Sat 14:00-18:00, Sun cerrado).',
+          respuesta: `☀️ De lunes a sábado atendemos por la tarde de **14:00 a 18:00 hrs** (los domingos la atención es solo en la mañana hasta las 12:00 hrs). Recuerda que análisis con ayuno como sangre o glucosa se recomiendan por la mañana. ¿Deseas agendar tu turno?`,
+          opciones: ['📅 Programar cita', '📋 Ver preparación']
+        };
+      }
+
+      // Pregunta específica sobre la mañana / día
+      if (t.includes('manana') || t.includes('en la manana') || t.includes('dia') || t.includes('temprano')) {
+        return {
+          razonamiento: 'Consulta sobre horario matutino. Se informa de 07:30 a 12:00 y toma de muestras en ayunas.',
+          respuesta: `☀️ Por la mañana atendemos **todos los días (lunes a domingo) desde las 07:30 hrs**. La toma de muestras en ayunas se realiza de **07:30 a 11:30 hrs**. ¿Te gustaría reservar tu cita matutina?`,
+          opciones: ['📅 Programar cita', '📋 Ver preparación']
+        };
+      }
+
       if (idioma.esChino) {
         return {
           razonamiento: `Horario en chino.`,
-          respuesta: `🕐 Atendemos de **周一至周五 / Lunes a Viernes de 07:30 a 18:00 hrs** (muestras en ayunas de 07:30 a 11:30). ¿Deseas agendar un turno?`
+          respuesta: `🕐 我们的营业时间是 **周一至周日（每天营业）**：周一至周六 07:30 至 18:00，**周日仅至中午 12:00**（空腹抽血建议 07:30 至 11:30，夜间不营业）。您想预约吗？`
         };
       }
       const opciones = [
-        `🕐 Atendemos de **lunes a viernes de 07:30 a 18:00 hrs** en jornada continua (toma de muestras en ayunas de 07:30 a 11:30). ¿Te gustaría agendar una cita?`,
-        `Nuestro horario es de **lunes a viernes de 07:30 a 18:00 hrs** (para ayuno sugerimos venir antes de las 11:30). ¿Deseas programar tu visita?`
+        `🕐 Atendemos **todos los días de lunes a domingo**: **lunes a sábado de 07:30 a 18:00 hrs**, y los **domingos hasta mediodía (07:30 a 12:00 hrs)** (muestras en ayunas de 07:30 a 11:30). ¿Deseas agendar una cita?`,
+        `Nuestro horario es de **lunes a domingo todos los días**: lunes a sábado de **07:30 a 18:00 hrs**, y los domingos atendemos hasta mediodía de **07:30 a 12:00 hrs** (en la noche no hay atención). ¿Te gustaría programar tu visita?`
       ];
       return {
-        razonamiento: `Horarios precisos y directos con llamado a la acción.`,
-        respuesta: elegirVariacion(opciones)
+        razonamiento: `Horarios precisos diferenciando días y momentos del día.`,
+        respuesta: elegirVariacion(opciones),
+        opciones: ['📅 Programar cita', '🧪 Exámenes disponibles', '📍 Ver ubicación']
       };
     }
   },
@@ -1157,13 +1329,13 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
     generarRespuesta: (idioma) => {
       if (idioma.esChino) {
         return {
-          razonamiento: `Ubicación en chino con teléfono de contacto.`,
-          respuesta: `📍 Estamos en las instalaciones centrales de **Lab. Gamboa**, de lunes a viernes de 07:30 a 18:00 hrs. Teléfono / WhatsApp de contacto: **71772118**. ¿Te gustaría agendar tu cita?`
+          razonamiento: `Ubicación y contacto en chino.`,
+          respuesta: `📍 我们位于甘博亚临床实验室（**Lab. Gamboa**）中心，周一至周日每天营业（周日营业至中午 12:00）。联系电话 / 微信 / WhatsApp：**71772118**。您需要预约吗？`
         };
       }
       return {
-        razonamiento: `Ubicación clara y teléfono del laboratorio.`,
-        respuesta: `📍 Estamos ubicados en las instalaciones centrales del **Laboratorio Clínico Gamboa** (atención de lunes a viernes de 07:30 a 18:00 hrs). Para cualquier consulta puedes comunicarte al **71772118**. ¿Deseas agendar tu turno?`
+        razonamiento: `Ubicación y contacto en español con horario actualizado.`,
+        respuesta: `📍 Estamos en las instalaciones centrales de **Lab. Gamboa**. Atendemos de **lunes a domingo** (lunes a sábado de 07:30 a 18:00 hrs y domingos de 07:30 a 12:00 hrs). Teléfono / WhatsApp: **71772118**. ¿Te gustaría agendar tu cita?`
       };
     }
   },
@@ -1235,20 +1407,33 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
   // 8. CONSULTA Y ENTREGA DE RESULTADOS
   {
     categoria: 'RESULTADOS',
-    palabrasClave: ['resultado', 'resultados', 'informe', 'reporte', 'pdf', 'cuando salen', 'descargar', 'donde veo'],
-    patrones: [/(resultado|informe|reporte|pdf|cuando sale|donde veo|mis analisis)/],
-    palabrasChinas: ['结果', '报告', '化验单', '几时出', '怎么查', '下载报告'],
-    palabrasIngles: ['results', 'test report', 'when will it be ready', 'download pdf'],
-    generarRespuesta: (idioma) => {
+    palabrasClave: [
+      'resultado', 'resultados', 'informe', 'reporte', 'pdf', 'cuando salen', 'descargar', 'donde veo',
+      'mis examenes', 'mis analisis', 'mis pruebas', 'mis estudios', 'ayudame con mis examenes',
+      'ayuda con mis examenes', 'ver mis examenes', 'consultar mis examenes', 'ver mis analisis',
+      'mis resultados', 'ver resultados', 'como veo mis resultados', 'ayudame con mis analisis'
+    ],
+    patrones: [
+      /(resultado|resultados|informe|reporte|pdf|cuando\s+sale|donde\s+veo|mis\s+analisis|mis\s+examenes|ayudame\s+con\s+mis\s+examenes|ver\s+mis\s+examenes)/i,
+      /\b(mis|mi)\s+(examenes?|analisis|estudios?|pruebas?|resultados?)\b/i
+    ],
+    palabrasChinas: ['结果', '报告', '化验单', '几时出', '怎么查', '下载报告', '我的化验', '看报告'],
+    palabrasIngles: ['results', 'test report', 'when will it be ready', 'download pdf', 'my tests', 'my results'],
+    generarRespuesta: (idioma, nombre, textoOriginal, contexto) => {
+      const memoriaTurnos = contexto?.historial?.length || 0;
+      const esInicio = memoriaTurnos <= 1;
+
       if (idioma.esChino) {
         return {
-          razonamiento: `Resultados en chino.`,
-          respuesta: `📊 Los análisis de sangre y orina están listos en **24 horas** (PCR en 24-48h). Puedes descargarlos en PDF desde la sección **"Resultados Clínicos"**. ¿Tienes alguna otra duda?`
+          razonamiento: `Resultados en chino con diferenciación clara.`,
+          respuesta: `📊 您的化验结果：血液和尿液检查通常在 **24小时** 内出具（PCR核酸为24-48小时）。您可以在个人中心的 **"Resultados Clínicos"（临床结果）** 页面查看并下载PDF报告。请问需要帮您查看结果还是预约新的化验？`,
+          opciones: ['📊 查看我的结果 (Ver resultados)', '📅 预约新化验 (Programar cita)']
         };
       }
       return {
-        razonamiento: `Tiempos de entrega y descarga explicados en breve.`,
-        respuesta: `📊 Los análisis de sangre y orina están listos en **24 horas** (PCR en 24-48h). Puedes visualizarlos y descargarlos en PDF desde la sección **"Resultados Clínicos"** de tu panel.`
+        razonamiento: `Diferenciación clara: orientación para consultar resultados ya realizados o agendar un nuevo estudio sin confundir términos.`,
+        respuesta: `📊 **Resultados y exámenes de laboratorio:**\n\n• Si deseas consultar los **resultados** de tus análisis ya realizados, puedes verlos y descargarlos en PDF desde la sección **"Resultados Clínicos"** de tu panel de paciente.\n• Si lo que necesitas es **agendar una cita** para un nuevo análisis, con gusto te programo un turno.\n\n¿Qué deseas realizar?`,
+        opciones: ['📊 Ver mis resultados', '📅 Programar nueva cita', '🧪 Exámenes disponibles']
       };
     }
   },
@@ -1425,24 +1610,38 @@ const REGLAS_CLINICAS: ReglaInteligente[] = [
 export function procesarConMotorDeReglas(
   mensaje: string,
   contexto: ContextoSesion,
+  ahora: Date = new Date(),
 ): ResultadoAgente {
-  const ahora = new Date();
   contexto.turno += 1;
 
   // 1. Análisis lingüístico y corrección fonética/typos
   const idioma = detectarIdioma(mensaje);
   const { textoNormalizado, correcciones } = interpretarTextoConFuzzy(mensaje);
 
-  // 2. ¿Estamos en flujo de cita o el usuario quiere una cita?
-  const enFlujoCita = contexto.temaActual === 'cita';
-  const intentaCita = esIntencionCita(mensaje, textoNormalizado, contexto);
+  // 1.2 Memoria contextual temporal:
+  let enFlujoCita = contexto.temaActual === 'cita';
+  let intentaCita = esIntencionCita(mensaje, textoNormalizado, contexto);
+
+  // Si no está explícito en el mensaje pero en el historial reciente el agente estaba esperando datos de cita:
+  if (!enFlujoCita && !intentaCita && contexto.historial && contexto.historial.length > 0) {
+    const ultimosMensajesAgente = contexto.historial.filter(m => m.de === 'agente').slice(-2);
+    const ultimoAgente = ultimosMensajesAgente[ultimosMensajesAgente.length - 1];
+    if (ultimoAgente) {
+      const textoUltimo = norm(ultimoAgente.texto);
+      const preguntabaCita = /fecha|hora|examen|analisis|estudio|turno|cita|agendar|confirmamos|confirmar|para que fecha|a que hora/i.test(textoUltimo);
+      if (preguntabaCita) {
+        enFlujoCita = true;
+        contexto.temaActual = 'cita';
+      }
+    }
+  }
 
   if (enFlujoCita || intentaCita) {
     return manejarFlujoCita(mensaje, textoNormalizado, idioma, correcciones, contexto, ahora);
   }
 
   // 3. Conversación abierta razonada
-  return manejarConversacionAbierta(mensaje, textoNormalizado, idioma, correcciones, contexto);
+  return manejarConversacionAbierta(mensaje, textoNormalizado, idioma, correcciones, contexto, ahora);
 }
 
 // ─── GESTOR DE FLUJO DE CITAS (SLOT-FILLING) ───────────────────────
@@ -1463,6 +1662,58 @@ function manejarFlujoCita(
       pensamiento: 'El usuario canceló el agendamiento.',
       respuesta: 'Cita cancelada. ¿Te ayudo con algo más? 😊',
       intencion: 'CANCELAR_CITA'
+    };
+  }
+
+  // 1.5. Si los slots ya estaban completos y el usuario envía una confirmación ("confirma la cita", "listo", "sí", etc.)
+  const normMsg = norm(mensajeOriginal);
+  const esConfirmacion = esConfirmacionAfirmativa(mensajeOriginal);
+
+  if (contexto.citaSlots?.examen && contexto.citaSlots?.fecha && contexto.citaSlots?.hora && esConfirmacion) {
+    const slotsConfirmados = { ...contexto.citaSlots };
+    contexto.citaSlots = undefined;
+    contexto.temaActual = undefined;
+    return {
+      pensamiento: `El paciente confirmó la cita con '${mensajeOriginal}'. Se procede a confirmar el registro.`,
+      respuesta: `✅ **¡Cita confirmada y registrada exitosamente!**\n\n🔬 **${slotsConfirmados.examen}**\n📅 **${formatearFechaLegible(slotsConfirmados.fecha!)}**\n🕐 **${slotsConfirmados.hora} hrs**\n\nTe hemos enviado los detalles a tu correo electrónico. Si deseas modificarla o consultar algo más, solo dímelo. 😊`,
+      intencion: 'programar_cita',
+      accion: 'CITA_REGISTRADA',
+      citaSlots: slotsConfirmados,
+    };
+  }
+
+  // 1.8 Modificaciones explícitas sin nuevo slot directo
+  if (/cambi(ar|o|a)\s+(la\s+)?hora|modific(ar|o|a)\s+(la\s+)?hora|otro\s+horario|otra\s+hora/i.test(normMsg) && !extraerHora(mensajeOriginal)) {
+    if (contexto.citaSlots) contexto.citaSlots.hora = undefined;
+    return {
+      pensamiento: 'El paciente desea cambiar la hora de la cita. Pido nuevo horario.',
+      respuesta: `¿A qué horario deseas cambiar tu cita? (Atendemos de **07:30 a 18:00 hrs**)`,
+      intencion: 'programar_cita',
+      accion: 'PEDIR_HORA',
+      citaSlots: contexto.citaSlots ? { ...contexto.citaSlots } : undefined,
+    };
+  }
+
+  if (/cambi(ar|o|a)\s+(la\s+)?fecha|modific(ar|o|a)\s+(la\s+)?fecha|otra\s+fecha|otro\s+dia/i.test(normMsg) && !extraerFecha(mensajeOriginal, ahora)) {
+    if (contexto.citaSlots) contexto.citaSlots.fecha = undefined;
+    return {
+      pensamiento: 'El paciente desea cambiar la fecha de la cita. Pido nueva fecha.',
+      respuesta: `¿Para qué fecha deseas agendar tu cita?`,
+      intencion: 'programar_cita',
+      accion: 'PEDIR_FECHA',
+      citaSlots: contexto.citaSlots ? { ...contexto.citaSlots } : undefined,
+    };
+  }
+
+  if (/cambi(ar|o|a)\s+(el\s+)?examen|modific(ar|o|a)\s+(el\s+)?examen|otro\s+examen|otro\s+analisis/i.test(normMsg) && !extraerExamen(mensajeOriginal)) {
+    if (contexto.citaSlots) contexto.citaSlots.examen = undefined;
+    return {
+      pensamiento: 'El paciente desea cambiar el examen. Muestro opciones.',
+      respuesta: `¿Qué análisis clínico deseas realizarte?`,
+      intencion: 'programar_cita',
+      accion: 'PEDIR_EXAMEN',
+      citaSlots: contexto.citaSlots ? { ...contexto.citaSlots } : undefined,
+      opcionesExamen: EXAMENES_OFICIALES,
     };
   }
 
@@ -1506,7 +1757,8 @@ function manejarFlujoCita(
   const minActuales = ahora.getHours() * 60 + ahora.getMinutes();
   const minLimiteMuestrasAyuno = 11 * 60 + 30; // 11:30 — límite para toma de muestras en ayunas
   const minMediodia = 12 * 60; // 12:00
-  const minCierre = 18 * 60;   // 18:00
+  const esHoyDomingo = ahora.getDay() === 0;
+  const minCierreHoy = esHoyDomingo ? 12 * 60 : 18 * 60;   // Domingo cierra a las 12:00, Lun-Sáb a las 18:00
 
   // Validaciones de fecha
   if (fecha) {
@@ -1521,13 +1773,15 @@ function manejarFlujoCita(
     }
 
     // ── VALIDACIÓN CLÍNICA: Si es hoy y ya pasó el horario de atención ──
-    if (fecha === hoyStr && minActuales >= minCierre) {
+    if (fecha === hoyStr && minActuales >= minCierreHoy) {
       const mañana = new Date(ahora);
       mañana.setDate(mañana.getDate() + 1);
       const mañanaStr = `${mañana.getFullYear()}-${String(mañana.getMonth() + 1).padStart(2, '0')}-${String(mañana.getDate()).padStart(2, '0')}`;
       return {
-        pensamiento: `Son las ${horaActualStr} y el laboratorio cierra a las 18:00. No se puede agendar para hoy. Sugiero mañana.`,
-        respuesta: `⚠️ Ya pasó el horario de atención de hoy (**18:00 hrs**). No es posible agendar para hoy.\n\n¿Te gustaría agendar para **mañana (${formatearFechaLegible(mañanaStr)})**?`,
+        pensamiento: `Son las ${horaActualStr} y hoy el laboratorio ya cerró (cierre a las ${esHoyDomingo ? '12:00' : '18:00'}). No se puede agendar para hoy. Sugiero mañana.`,
+        respuesta: esHoyDomingo
+          ? `⚠️ Los domingos atendemos solo hasta mediodía (**12:00 hrs**) y ya concluyó la atención por hoy.\n\n¿Te gustaría agendar para **mañana (${formatearFechaLegible(mañanaStr)})**?`
+          : `⚠️ Ya pasó el horario de atención de hoy (**18:00 hrs**). No es posible agendar para hoy.\n\n¿Te gustaría agendar para **mañana (${formatearFechaLegible(mañanaStr)})**?`,
         intencion: 'programar_cita',
         accion: 'PEDIR_FECHA',
         citaSlots: { ...slots },
@@ -1580,7 +1834,32 @@ function manejarFlujoCita(
     const minTotal = h * 60 + m;
     const minApertura = 7 * 60 + 30; // 07:30
 
-    if (minTotal < minApertura || minTotal > minCierre) {
+    const fechaObjetivo = slots.fecha || hoyStr;
+    const [fAño, fMes, fDia] = fechaObjetivo.split('-').map(Number);
+    const esDomingoCita = new Date(fAño, fMes - 1, fDia).getDay() === 0;
+    const minCierreCita = esDomingoCita ? 12 * 60 : 18 * 60; // Domingos hasta mediodía (12:00)
+
+    if (minTotal < minApertura || minTotal > minCierreCita) {
+      if (esDomingoCita && minTotal > 12 * 60) {
+        return {
+          pensamiento: `El paciente pidió las ${hora} para un domingo, pero los domingos solo atendemos hasta mediodía (12:00).`,
+          respuesta: `⚠️ Los domingos atendemos únicamente hasta mediodía (**07:30 a 12:00 hrs**). La hora **${hora}** está fuera de horario.\n\n¿Te gustaría agendar ese domingo antes de las 12:00?`,
+          intencion: 'programar_cita',
+          accion: 'PEDIR_HORA',
+          citaSlots: { ...slots, hora: undefined },
+          opciones: ['08:00', '09:00', '10:00', '11:00', '11:30'],
+        };
+      }
+      if (minTotal >= 19 * 60 || minTotal < 6 * 60) {
+        return {
+          pensamiento: `El paciente solicitó horario en la noche (${hora}), pero el laboratorio no atiende de noche (cierre a las ${esDomingoCita ? '12:00' : '18:00'}). Sugiero horarios en el día.`,
+          respuesta: `🌙 En la noche el laboratorio ya se encuentra cerrado. Atendemos de **07:30 a 18:00 hrs** (lunes a sábado) y **domingos de 07:30 a 12:00 hrs**.\n\n¿Prefieres agendar en la **mañana** (07:30 - 11:30) o en la **tarde** (14:00 - 18:00)?`,
+          intencion: 'programar_cita',
+          accion: 'PEDIR_HORA',
+          citaSlots: { ...slots, hora: undefined },
+          opciones: ['08:00', '09:30', '10:30', '14:30', '16:00'],
+        };
+      }
       return {
         pensamiento: `La hora ${hora} está fuera del horario de atención (07:30-18:00). Sugiero horarios válidos.`,
         respuesta: `⚠️ La hora **${hora}** está fuera de nuestro horario (**07:30 a 18:00 hrs**). ¿A qué hora prefieres?`,
@@ -1618,27 +1897,44 @@ function manejarFlujoCita(
     slots.hora = hora;
   }
 
+  const { periodo, saludo } = obtenerPeriodoDelDia(ahora);
+  const memoriaTurnos = contexto.historial?.length || 0;
+
+  // Recuperación desde memoria temporal si algún slot no vino en este turno
+  if (!slots.examen && contexto.historial && contexto.historial.length > 0) {
+    for (let i = contexto.historial.length - 1; i >= 0; i--) {
+      const m = contexto.historial[i];
+      if (m.de === 'usuario') {
+        const exH = extraerExamen(m.texto);
+        if (exH) {
+          slots.examen = exH;
+          break;
+        }
+      }
+    }
+  }
+
   // Construcción del pensamiento paso a paso (Chain of Thought)
   const partesPensamiento: string[] = [
-    `Paso 1 (Análisis lingüístico): Idioma detectado: ${idioma.descripcion}.`,
+    `Paso 1 (Percepción lingüística y temporal): Hora actual: ${horaActualStr} (${periodo}). Idioma: ${idioma.descripcion}. Memoria activa: ${memoriaTurnos} turnos recordados.`,
   ];
 
   if (correcciones.length > 0) {
     partesPensamiento.push(`Paso 2 (Corrección tipográfica): Detecté términos con letras mezcladas o abreviaciones: [${correcciones.join(', ')}].`);
   } else {
-    partesPensamiento.push(`Paso 2 (Normalización): Texto interpretado con alta claridad.`);
+    partesPensamiento.push(`Paso 2 (Normalización y Memoria): Contexto integrado con continuidad.`);
   }
 
   partesPensamiento.push(`Paso 3 (Extracción de slots): Examen=[${slots.examen || 'pendiente'}], Fecha=[${slots.fecha || 'pendiente'}], Hora=[${slots.hora || 'pendiente'}].`);
 
   // Identificar qué slot falta
   if (!slots.examen) {
-    partesPensamiento.push(`Falta el examen. Presento el catálogo.`);
+    partesPensamiento.push(`Falta el examen. Presento el catálogo interactivo adaptado al momento del día.`);
     return {
       pensamiento: partesPensamiento.join(' '),
       respuesta: idioma.esChino
         ? `好的！请问您需要预约哪项化验项目？\n\n¿Qué análisis necesitas?`
-        : `¿Qué análisis necesitas realizarte?`,
+        : `${saludo} ¡Con mucho gusto te ayudo a programar tu cita para tus análisis! ¿Qué tipo de estudio necesitas realizarte?`,
       intencion: 'programar_cita',
       accion: 'PEDIR_EXAMEN',
       citaSlots: { ...slots },
@@ -1662,8 +1958,13 @@ function manejarFlujoCita(
   if (!slots.hora) {
     partesPensamiento.push(`Examen y fecha listos. Solicito hora.`);
     const requiereAyunoHora = /sangre|lipid|lipíd|lipidico|glucosa|ayuno|hemograma|biometr/i.test(slots.examen);
+    const [fAño, fMes, fDia] = slots.fecha.split('-').map(Number);
+    const esDomingoSlot = new Date(fAño, fMes - 1, fDia).getDay() === 0;
+
     const horarioInfo = requiereAyunoHora
       ? `Este examen requiere **ayuno**, agenda entre **07:30 y 11:30 hrs**.`
+      : esDomingoSlot
+      ? `Los domingos atendemos hasta mediodía (**07:30 a 12:00 hrs**).`
       : `Atendemos de **07:30 a 18:00 hrs**.`;
     return {
       pensamiento: partesPensamiento.join(' '),
@@ -1698,7 +1999,8 @@ function manejarConversacionAbierta(
   textoNormalizado: string,
   idioma: ReturnType<typeof detectarIdioma>,
   correcciones: string[],
-  contexto: ContextoSesion
+  contexto: ContextoSesion,
+  ahora: Date = new Date()
 ): ResultadoAgente {
   const textoCombinado = `${norm(mensajeOriginal)} ${textoNormalizado}`;
 
@@ -1762,9 +2064,17 @@ function manejarConversacionAbierta(
     }
   }
 
-  // Construcción del pensamiento razonable
+  // Construcción del pensamiento razonable con percepción temporal y memoria
+  const { periodo, saludo: saludoOriginal } = obtenerPeriodoDelDia(ahora);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const horaActualStr = `${pad(ahora.getHours())}:${pad(ahora.getMinutes())}`;
+  const memoriaTurnos = contexto.historial?.length || 0;
+  // Solo saludar con "Buenos días/tardes" en el primer turno para no ser repetitivo
+  const esPrimerTurno = memoriaTurnos <= 1;
+  const prefijoSaludo = esPrimerTurno ? `${saludoOriginal} ` : '';
+
   const pensamientoPasos: string[] = [
-    `Paso 1 (Percepción lingüística): Mensaje recibido. Idioma detectado: ${idioma.descripcion}.`,
+    `Paso 1 (Percepción lingüística y temporal): Hora actual: ${horaActualStr} (${periodo}). Idioma: ${idioma.descripcion}. Memoria activa: ${memoriaTurnos} turnos recordados.`,
   ];
 
   if (correcciones.length > 0) {
@@ -1775,7 +2085,7 @@ function manejarConversacionAbierta(
 
   if (mejorRegla && maxPuntaje >= 5) {
     pensamientoPasos.push(`Paso 3 (Comprensión semántica): Intención clasificada como [${mejorRegla.categoria}] (afinidad: ${maxPuntaje} pts).`);
-    const resp = mejorRegla.generarRespuesta(idioma, contexto.nombre, mensajeOriginal);
+    const resp = mejorRegla.generarRespuesta(idioma, contexto.nombre, mensajeOriginal, contexto, ahora);
     pensamientoPasos.push(`Paso 4 (Razonamiento contextual): ${resp.razonamiento}`);
 
     contexto.ultimaIntencion = mejorRegla.categoria;
@@ -1786,6 +2096,36 @@ function manejarConversacionAbierta(
       accion: resp.accion,
       opcionesExamen: resp.opcionesExamen,
       opciones: resp.opciones,
+    };
+  }
+
+  // 1. Si el usuario pregunta específicamente por "mis exámenes", "mis análisis" o "mis resultados"
+  const esConsultaMisExamenes = /\b(mis|mi)\s+(examenes?|analisis|estudios?|pruebas?|resultados?)\b/i.test(textoCombinado) ||
+    /ayudame\s+con\s+(mis|mi|los)\s+examenes/i.test(textoCombinado);
+
+  if (esConsultaMisExamenes) {
+    pensamientoPasos.push(`Paso 3 (Comprensión semántica): El paciente consulta por sus exámenes o resultados personales.`);
+    pensamientoPasos.push(`Paso 4 (Orientación diferenciada): Aclaro cómo ver sus resultados anteriores o cómo agendar una nueva prueba.`);
+    return {
+      pensamiento: pensamientoPasos.join(' '),
+      respuesta: `${prefijoSaludo}¡Con mucho gusto te ayudo! Si deseas consultar los **resultados** de tus análisis anteriores, puedes verlos y descargarlos en PDF desde la sección **"Resultados Clínicos"** de tu panel. Si deseas **programar una cita** para un nuevo examen, indícame qué estudio requieres o elige una opción:`,
+      intencion: 'RESULTADOS',
+      opciones: ['📊 Ver mis resultados', '📅 Programar nueva cita', '🧪 Exámenes disponibles'],
+    };
+  }
+
+  // 2. Si el mensaje contiene términos de análisis o catálogo del laboratorio
+  if (/analisis|examen|estudios?|pruebas?|citas?|turnos?|laboratorio|sangre|orina|glucosa|pcr|ayuno|doctor|medico/i.test(textoCombinado)) {
+    pensamientoPasos.push(`Paso 3 (Comprensión semántica): Término clínico o de laboratorio detectado. Ofrezco asistencia directa para agendamiento o consulta.`);
+    pensamientoPasos.push(`Paso 4 (Orientación clínica proactiva): Presento catálogo interactivo de exámenes disponibles.`);
+    contexto.temaActual = 'cita';
+    return {
+      pensamiento: pensamientoPasos.join(' '),
+      respuesta: `${prefijoSaludo}¡Con mucho gusto te ayudo! En el **Laboratorio Gamboa** realizamos estos análisis clínicos principales: sangre de rutina, PCR molecular, orina completo, perfil lipídico y glucosa. ¿Deseas agendar tu cita para alguno de ellos o consultar requisitos?`,
+      intencion: 'SOLICITUD_ANALISIS_O_CITA',
+      accion: 'PEDIR_EXAMEN',
+      opcionesExamen: EXAMENES_OFICIALES,
+      opciones: EXAMENES_OFICIALES,
     };
   }
 

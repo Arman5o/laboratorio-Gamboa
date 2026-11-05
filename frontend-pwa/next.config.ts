@@ -10,8 +10,8 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
-  // Apunta al directorio del frontend para silenciar el warning de lockfiles múltiples
-  outputFileTracingRoot: path.join(__dirname),
+  // Apunta a la raíz del proyecto para evitar que busque hacia carpetas superiores del usuario
+  outputFileTracingRoot: path.join(__dirname, '..'),
 };
 
 export default withPWA(nextConfig);
